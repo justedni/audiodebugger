@@ -1,0 +1,6 @@
+bin/
+build/
+Builds/
+Library/JuceLibraryCode/
+Standalone/Builds/
+Standalone/JuceLibraryCode/

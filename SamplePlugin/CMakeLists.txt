@@ -1,0 +1,50 @@
+cmake_minimum_required(VERSION 3.15)
+
+project(SamplePlugin VERSION 1.0.0)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+juce_add_plugin(${PROJECT_NAME}
+    COMPANY_NAME "Vincent Dortel"
+    IS_SYNTH FALSE
+    NEEDS_MIDI_INPUT FALSE
+    NEEDS_MIDI_OUTPUT FALSE
+    IS_MIDI_EFFECT FALSE
+    EDITOR_WANTS_KEYBOARD_FOCUS FALSE
+    COPY_PLUGIN_AFTER_BUILD FALSE
+    PLUGIN_MANUFACTURER_CODE vdor
+    PLUGIN_CODE demo
+    FORMATS VST3
+    NEEDS_WEB_BROWSER FALSE
+    PRODUCT_NAME SamplePlugin)
+
+target_sources(${PROJECT_NAME}
+    PRIVATE
+        Source/SamplePluginEditor.cpp
+        Source/SamplePluginEditor.h
+        Source/SamplePluginProcessor.cpp
+        Source/SamplePluginProcessor.h
+)
+
+target_compile_definitions(${PROJECT_NAME}
+    PUBLIC
+        JUCE_WEB_BROWSER=0
+        JUCE_USE_CURL=0
+        JUCE_VST3_CAN_REPLACE_VST2=0)
+
+
+target_include_directories(${PROJECT_NAME}
+    PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/../Library/source
+        ${CMAKE_CURRENT_SOURCE_DIR}/../Library/include
+)
+
+target_link_libraries(${PROJECT_NAME}
+    PRIVATE
+        AudioDebuggerLib
+    PUBLIC
+        juce::juce_recommended_config_flags
+        juce::juce_recommended_lto_flags
+        juce::juce_recommended_warning_flags
+)

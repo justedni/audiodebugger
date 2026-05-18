@@ -1,0 +1,1563 @@
+#include "juce/AudioDebuggerUI.h"
+
+#include "core/AudioDebug.h"
+#include "core/DebugProcessor.h"
+#include "core/ReportFile.h"
+
+#include "juce/CustomSlider.h"
+#include "juce/ControlPanel.h"
+#include "juce/DiffDetector.h"
+#include "juce/MarkerStore.h"
+#include "juce/MipmapBuilder.h"
+#include "juce/Mipmaps.h"
+#include "juce/WaveformOverview.h"
+#include "juce/ChannelComponent.h"
+#include "juce/OverlayComponent.h"
+
+#include <assert.h>
+
+namespace AudioDebug {
+
+class AutoConnectButton : public juce::TextButton
+{
+public:
+    enum State : uint8_t
+    {
+        Disconnected = 0,
+        Armed,
+        Connected
+    };
+
+    AutoConnectButton(AudioDebuggerUI* audioDebuggerUI)
+        : m_audioDebugger(audioDebuggerUI)
+    {
+        updateButtonText();
+
+        onClick = [this]()
+        {
+            switch (m_state)
+            {
+            case State::Disconnected:
+            {
+                m_state = State::Armed;
+                break;
+            }
+            case State::Armed: juce::Colours::orange;
+            {
+                AudioDebugger::get()->resetWriter();
+                m_state = State::Disconnected;
+                break;
+            }
+            case State::Connected: juce::Colours::red;
+            {
+                m_audioDebugger->triggerCaptureEnd();
+                AudioDebugger::get()->resetWriter();
+                m_state = State::Disconnected;
+                break;
+            }
+            }
+
+            updateButtonText();
+            repaint();
+        };
+    }
+
+    ~AutoConnectButton()
+    {
+    }
+
+    bool isArmed() const { return m_state == State::Armed; }
+    bool isConnected() const { return m_state == State::Connected; }
+    void setConnected()
+    {
+        m_state = State::Connected;
+        updateButtonText();
+        repaint();
+    }
+    void setDisconnected()
+    {
+        m_state = State::Disconnected;
+        updateButtonText();
+        repaint();
+    }
+
+    void updateButtonText()
+    {
+        juce::String text;
+        switch (m_state)
+        {
+        case State::Disconnected: text = "Disconnected"; break;
+        case State::Armed:  text = "Connect: waiting"; break;
+        case State::Connected:  text = "Connected"; break;
+        }
+
+        setButtonText(text);
+    }
+
+    void paintButton(juce::Graphics& g, bool shouldDrawButtonAsHighlighted, bool shouldDrawButtonAsDown) override
+    {
+        auto bounds = getLocalBounds().toFloat();
+
+        juce::Colour backgroundColor;
+        switch (m_state)
+        {
+        case State::Disconnected: backgroundColor = getLookAndFeel().findColour(juce::TextButton::buttonColourId); break;
+        case State::Armed: backgroundColor = juce::Colours::orange; break;
+        case State::Connected: backgroundColor = juce::Colours::red; break;
+        }
+
+        if (shouldDrawButtonAsHighlighted)
+            backgroundColor = backgroundColor.brighter(0.1f);
+
+        g.setColour(backgroundColor);
+        g.fillRoundedRectangle(bounds, 4.0f);
+
+        g.setColour(juce::Colours::black);
+        g.drawRoundedRectangle(bounds, 4.0f, 1.0f);
+
+        g.setColour(getToggleState() ? juce::Colours::white : juce::Colours::black);
+        g.setFont(14.0f);
+        g.drawText(getButtonText(), bounds, juce::Justification::centred);
+    }
+
+private:
+    State m_state = Armed;
+    AudioDebuggerUI* m_audioDebugger = nullptr;
+};
+
+class MainMenuModel : public juce::MenuBarModel
+{
+public:
+    MainMenuModel(AudioDebuggerUI* parent);
+
+    juce::StringArray getMenuBarNames() override;
+    juce::PopupMenu getMenuForIndex(int menuIndex, const juce::String& menuName) override;
+    void menuItemSelected(int menuItemID, int menuIndex) override;
+
+    bool getDarkModeEnabled() const { return m_optionDarkMode; }
+private:
+    AudioDebuggerUI* m_parent = nullptr;
+    bool m_optionDarkMode = false;
+};
+
+juce::Colour AudioDebuggerUI::colorIdToJuceColour(uint32_t id) const
+{
+    auto juceColor = juce::Colours::black;
+    switch (id)
+    {
+    case Black: juceColor = juce::Colours::black; break;
+    case PlainGrey: juceColor = juce::Colours::grey; break;
+    case DottedGrey:juceColor = juce::Colours::grey; break;
+    case Red: juceColor = juce::Colours::red; break;
+    case Blue: juceColor = juce::Colours::blue; break;
+    case Green:juceColor = juce::Colours::green; break;
+    default: assert(false);
+    }
+
+    return juceColor;
+}
+
+class MainComponent : public juce::Component
+                    , public juce::ScrollBar::Listener
+{
+public:
+    MainComponent(AudioDebuggerUI* audioDebugger)
+        : m_audioDebugger(audioDebugger)
+    {
+        m_menuBarModel = std::make_unique<MainMenuModel>(audioDebugger);
+        m_menuBar = std::make_unique<juce::MenuBarComponent>(m_menuBarModel.get());
+        addAndMakeVisible(m_menuBar.get());
+
+        m_autoConnectButton = std::make_unique<AutoConnectButton>(audioDebugger);
+        addAndMakeVisible(m_autoConnectButton.get());
+
+        m_autoWriteButton.setButtonText("Write");
+        m_autoWriteButton.setToggleState(true, juce::dontSendNotification);
+        addAndMakeVisible(m_autoWriteButton);
+        m_autoWriteButton.onClick = [this]()
+        {
+            auto state = m_autoWriteButton.getToggleState();
+            m_audioDebugger->setAutoWriteRptFile(state);
+        };
+
+        m_secondsLabel.setText("secs", juce::dontSendNotification);
+        addAndMakeVisible(m_secondsLabel);
+
+        m_writeLengthSlider.setRange(-1.0, 3600.0, 1.0);
+        m_writeLengthSlider.setValue(30.0);
+        m_writeLengthSlider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 50, 20);
+        addAndMakeVisible(m_writeLengthSlider);
+        m_writeLengthSlider.onValueChange = [this]
+        {
+            int value = std::round(m_writeLengthSlider.getValue());
+            m_audioDebugger->setRptFileMaxLength(value);
+        };
+
+        m_scrollbar.reset(new juce::ScrollBar(false));
+        m_scrollbar->setAutoHide(false);
+        m_scrollbar->addListener(this);
+        addAndMakeVisible(m_scrollbar.get());
+
+        m_controlPanel = audioDebugger->getControlPanel();
+        addAndMakeVisible(m_controlPanel);
+
+        addAndMakeVisible(m_audioDebugger);
+        m_audioDebugger->setParentComponentPtr(this);
+
+        addAndMakeVisible(m_sampleIdLabel);
+        m_sampleIdLabel.setFont(juce::Font(14.0f, juce::Font::bold));
+        m_sampleIdLabel.setJustificationType(juce::Justification::centredLeft);
+        m_sampleIdLabel.setText("Sample: ---", juce::dontSendNotification);
+
+        zoomSlider.reset(new juce::Slider());
+        zoomSlider->setRange(1.0, audioDebugger->getMaxZoom(), 0.0);
+        zoomSlider->setValue(1.0);
+        zoomSlider->setSkewFactorFromMidPoint(100.0);
+        zoomSlider->setTextBoxStyle(juce::Slider::NoTextBox, false, 100, 30);
+        //zoomSlider->setLookAndFeel(m_lookAndFeel.get());
+        zoomSlider->onValueChange = [this] { m_audioDebugger->setZoomLevel(zoomSlider->getValue()); };
+        addAndMakeVisible(zoomSlider.get());
+
+        addAndMakeVisible(m_zoomLabel);
+        m_zoomLabel.setFont(juce::Font(14.0f, juce::Font::bold));
+        m_zoomLabel.setJustificationType(juce::Justification::centredLeft);
+        m_zoomLabel.setText("H-Zoom:", juce::dontSendNotification);
+
+        addAndMakeVisible(m_zoomText);
+        m_zoomText.setFont(juce::Font(14.0f, juce::Font::bold));
+        m_zoomText.setJustificationType(juce::Justification::centredLeft);
+        m_zoomText.setText("------", juce::dontSendNotification);
+
+        addAndMakeVisible(m_diffThresholdLabel);
+        m_diffThresholdLabel.setFont(juce::Font(14.0f, juce::Font::bold));
+        m_diffThresholdLabel.setText("Diff - Threshold:", juce::dontSendNotification);
+
+        addAndMakeVisible(m_diffThresholdSlider);
+        m_diffThresholdSlider.setRange(0.0, 50, 1.0);
+        m_diffThresholdSlider.setValue(0);
+        m_diffThresholdSlider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 50, 20);
+        m_diffThresholdSlider.onValueChange = [this] { m_audioDebugger->differenceThresholdChanged(m_diffThresholdSlider.getValue()); };
+
+        m_diffMode.addItem("Full", DiffDetector::MaskPreset::Full + 1);
+        m_diffMode.addItem("16-bit", DiffDetector::MaskPreset::Bits16 + 1);
+        m_diffMode.onChange = [this]
+        {
+            if (auto* diffDetector = m_audioDebugger->getDiffDetector())
+            {
+                const int idx = m_diffMode.getSelectedId() - 1;
+                if (idx >= 0 && idx <= (uint8_t)DiffDetector::MaskPreset::Count)
+                {
+                    diffDetector->setMaskPreset((DiffDetector::MaskPreset)idx);
+                }
+            }
+        };
+        addAndMakeVisible(m_diffMode);
+
+        m_buttonPreviousDiff.reset(new juce::TextButton("Previous"));
+        addAndMakeVisible(m_buttonPreviousDiff.get());
+        m_buttonPreviousDiff->onClick = [this] { m_audioDebugger->goToDiff(AudioDebuggerUI::EDiffToGo::Previous); };
+
+        m_buttonNextDiff.reset(new juce::TextButton("Next"));
+        addAndMakeVisible(m_buttonNextDiff.get());
+        m_buttonNextDiff->onClick = [this] { m_audioDebugger->goToDiff(AudioDebuggerUI::EDiffToGo::Next); };
+
+        m_buttonDiffRefresh.reset(new juce::TextButton("Refresh"));
+        addAndMakeVisible(m_buttonDiffRefresh.get());
+        m_buttonDiffRefresh->onClick = [this] { m_audioDebugger->refreshGenFile(); };
+
+        setSize(600, 400);
+    }
+
+    ~MainComponent()
+    {
+        m_menuBar->setModel(nullptr);
+    }
+
+    void init()
+    {
+        zoomSlider->setValue(1.0, juce::dontSendNotification);
+    }
+
+    void resized() override
+    {
+        auto bounds = getLocalBounds();
+        auto menuBarBounds = bounds.removeFromTop(24);
+        auto scrollBarArea = bounds.removeFromBottom(18);
+        auto bottomBarBounds = bounds.removeFromBottom(20);
+        auto panelArea = bounds.removeFromRight(150);
+
+        m_menuBar->setBounds(menuBarBounds);
+        m_autoConnectButton->setBounds(menuBarBounds.removeFromRight(120).reduced(2));
+        m_secondsLabel.setBounds(menuBarBounds.removeFromRight(30));
+        m_writeLengthSlider.setBounds(menuBarBounds.removeFromRight(140).reduced(2));
+        m_autoWriteButton.setBounds(menuBarBounds.removeFromRight(60).reduced(2));
+
+        m_scrollbar->setBounds(scrollBarArea);
+        m_controlPanel->setBounds(panelArea);
+
+        m_zoomLabel.setBounds(bottomBarBounds.removeFromLeft(56));
+        zoomSlider->setBounds(bottomBarBounds.removeFromLeft(300));
+        m_zoomText.setBounds(bottomBarBounds.removeFromLeft(450));
+        bottomBarBounds.removeFromLeft(50);
+        m_diffThresholdLabel.setBounds(bottomBarBounds.removeFromLeft(100));
+        m_diffThresholdSlider.setBounds(bottomBarBounds.removeFromLeft(100));
+        m_diffMode.setBounds(bottomBarBounds.removeFromLeft(80));
+        m_buttonPreviousDiff->setBounds(bottomBarBounds.removeFromLeft(50));
+        m_buttonNextDiff->setBounds(bottomBarBounds.removeFromLeft(50));
+        m_buttonDiffRefresh->setBounds(bottomBarBounds.removeFromLeft(70));
+
+        m_sampleIdLabel.setBounds(bottomBarBounds.removeFromRight(120));
+
+        m_audioDebugger->setBounds(bounds);
+    }
+
+    void paint(juce::Graphics& g) override
+    {
+        g.setColour(juce::Colours::white);
+        const int lineY = getHeight() - 18;
+        g.drawLine(0, lineY, getWidth(), lineY);
+    }
+
+    void scrollBarMoved(juce::ScrollBar* scrollBar, double newRangeStart) override
+    {
+        if (scrollBar == m_scrollbar.get())
+        {
+            m_audioDebugger->scrollBarMoved(newRangeStart);
+
+            m_scrollbar->setCurrentRangeStart((double)newRangeStart, juce::dontSendNotification);
+
+            repaint();
+        }
+    }
+
+    void setZoomLevel(double value)
+    {
+        zoomSlider->setValue(value, juce::dontSendNotification);
+    }
+
+    void setZoomText(double zoomLevel, double verticalZoom, bool bIsUsingMipmaps, int mipmapLevel, double samplesPerPixel)
+    {
+        juce::String zoomLevelText;
+        if (zoomLevel < 10.0)
+            zoomLevelText = juce::String(zoomLevel, 1) + "x";
+        else if (zoomLevel < 1000.0)
+            zoomLevelText = juce::String((int)zoomLevel) + "x";
+        else if (zoomLevel < 10000.0)
+            zoomLevelText = juce::String(zoomLevel / 1000.0, 1) + "k";
+        else
+            zoomLevelText = juce::String((int)(zoomLevel / 1000.0)) + "k";
+
+        juce::String info = zoomLevelText;
+        info += " | V-Zoom: " + juce::String(verticalZoom, 1) + "x";
+        if (bIsUsingMipmaps)
+        {
+            info += " | Mipmap level: " + juce::String(mipmapLevel);
+            info += " | Samples per pixel: " + juce::String(samplesPerPixel);
+        }
+        else
+        {
+            info += " | Raw Samples";
+        }
+
+        m_zoomText.setText(info, juce::dontSendNotification);
+    }
+
+    void setGenerationButtonsEnabled(bool bEnable)
+    {
+        m_buttonPreviousDiff->setEnabled(bEnable);
+        m_buttonNextDiff->setEnabled(bEnable);
+        m_buttonDiffRefresh->setEnabled(bEnable);
+    }
+
+    void updateSampleDisplay(int64_t sample)
+    {
+        if (sample >= 0)
+        {
+            juce::String sampleText = juce::String(sample);
+
+            juce::String formatted;
+            int count = 0;
+            for (int i = sampleText.length() - 1; i >= 0; --i) {
+                if (count > 0 && count % 3 == 0)
+                    formatted = " " + formatted;
+                formatted = juce::String::charToString(sampleText[i]) + formatted;
+                count++;
+            }
+
+            m_sampleIdLabel.setText("Sample: " + formatted, juce::dontSendNotification);
+        }
+        else {
+            m_sampleIdLabel.setText("Sample: ---", juce::dontSendNotification);
+        }
+    }
+
+    MainMenuModel* getMenuBarModel() const { return m_menuBarModel.get(); }
+    AutoConnectButton* getAutoConnectButton() const { return m_autoConnectButton.get(); }
+    juce::ScrollBar* getScrollbar() const { return m_scrollbar.get(); }
+    ControlPanel* getControlPanel() const { return m_controlPanel; }
+
+    int getDiffThreshold() const { return m_diffThresholdSlider.getValue(); }
+
+    bool getAutoWriteRptFile() const { return m_autoWriteButton.getToggleState(); }
+    void setAutoWriteRptFile(bool bSet) { m_autoWriteButton.setToggleState(bSet, juce::dontSendNotification); }
+
+    int getRptFileMaxLength() const { return std::round(m_writeLengthSlider.getValue()); }
+    void setRptFileMaxLength(int numSeconds) { m_writeLengthSlider.setValue(static_cast<double>(numSeconds), juce::dontSendNotification); }
+
+private:
+    AudioDebuggerUI* m_audioDebugger = nullptr;
+
+    std::unique_ptr<juce::MenuBarComponent> m_menuBar;
+    std::unique_ptr<MainMenuModel> m_menuBarModel;
+    juce::Slider m_writeLengthSlider;
+    juce::ToggleButton m_autoWriteButton;
+    juce::Label m_secondsLabel;
+    std::unique_ptr<AutoConnectButton> m_autoConnectButton;
+
+    juce::Label m_zoomLabel;
+    std::unique_ptr<juce::Slider> zoomSlider;
+    juce::Label m_zoomText;
+    juce::Label m_sampleIdLabel;
+
+    juce::Label m_diffThresholdLabel;
+    juce::Slider m_diffThresholdSlider;
+    juce::ComboBox m_diffMode;
+    std::unique_ptr<juce::TextButton> m_buttonPreviousDiff;
+    std::unique_ptr<juce::TextButton> m_buttonNextDiff;
+    std::unique_ptr<juce::TextButton> m_buttonDiffRefresh;
+
+    std::unique_ptr<juce::ScrollBar> m_scrollbar;
+    ControlPanel* m_controlPanel = nullptr;
+};
+
+
+//-----------------------------------------------------------------------------
+AudioDebuggerUI::AudioDebuggerUI(DebugProcessor* processor)
+    : m_processor(processor)
+{
+    m_controlPanel.reset(new ControlPanel(this, processor));
+
+    m_lookAndFeel.reset(new AudioDebuggerLookAndFeel());
+    setLookAndFeel(m_lookAndFeel.get());
+    m_controlPanel->setPanelLookAndFeel(m_lookAndFeel.get());
+
+    m_controlPanel->addOption(EDefaultOptions::BufferStartMarkers, "Buffer start markers", true);
+    m_controlPanel->addOption(EDefaultOptions::CustomMarkers, "Custom markers", true);
+    m_controlPanel->addOption(EDefaultOptions::SamplesAsRects, "Samples as rectangles", true);
+    m_controlPanel->addOption(EDefaultOptions::SampleValues, "Sample values", true);
+
+    zoomVSlider.reset(new juce::Slider(juce::Slider::SliderStyle::LinearVertical, juce::Slider::TextBoxBelow));
+    zoomVSlider->setRange(1, 20, 0);
+    zoomVSlider->setValue(1);
+    zoomVSlider->setNumDecimalPlacesToDisplay(0);
+    zoomVSlider->setTextBoxStyle(juce::Slider::TextBoxBelow, false, 30, 20);
+    zoomVSlider->addListener(this);
+    zoomVSlider->setLookAndFeel(m_lookAndFeel.get());
+    zoomVSlider->setColour(juce::Slider::backgroundColourId, juce::Colours::grey.withAlpha(0.5f));
+    addAndMakeVisible(zoomVSlider.get());
+
+    m_numInputs = AudioDebugger::get()->getNumInputs();
+    refreshChannelBounds();
+}
+
+AudioDebuggerUI::~AudioDebuggerUI()
+{
+    setLookAndFeel(nullptr);
+}
+
+void AudioDebuggerUI::initialize()
+{
+    auto* menuBarModel = m_parentComponent->getMenuBarModel();
+    setAutoWriteRptFile(m_parentComponent->getAutoWriteRptFile());
+    setRptFileMaxLength(m_parentComponent->getRptFileMaxLength());
+    setUIDarkMode(menuBarModel->getDarkModeEnabled());
+
+    getControlPanel()->updateControls();
+    updateControlPanelValues();
+
+    onMouseSampleChanged = [this](int64_t sample) {
+        m_parentComponent->updateSampleDisplay(sample);
+    };
+
+    startTimerHz(60);
+}
+
+void AudioDebuggerUI::terminate()
+{
+    stopTimer();
+}
+
+int64_t AudioDebuggerUI::pixelToSample(float x, float componentWidth) const
+{
+    if (componentWidth <= 0.0f)
+        return viewportStartSample;
+
+    return viewportStartSample + (int64_t)((x / componentWidth) * (double)viewportLengthSamples);
+}
+
+float AudioDebuggerUI::sampleToPixel(int64_t sample, float componentWidth) const
+{
+    if (viewportLengthSamples <= 0)
+        return 0.0f;
+
+    return (float)((sample - viewportStartSample) / (double)viewportLengthSamples * componentWidth);
+}
+
+DiffDetector* AudioDebuggerUI::getDiffDetector() const
+{
+    return overview ? overview->getDiffDetector() : nullptr;
+}
+
+void AudioDebuggerUI::triggerCaptureEnd()
+{
+    if (overview)
+        overview->stopLiveMonitoring();
+    setAutoWriteRptFile(false);
+}
+
+ControlPanel* AudioDebuggerUI::getControlPanel() const { return m_controlPanel.get(); }
+
+void AudioDebuggerUI::addControlPanelOption(uint8_t id, const std::string& displayName, bool defaultEnabled)
+{
+    getControlPanel()->addOption(id, displayName, defaultEnabled);
+}
+
+void AudioDebuggerUI::addControlPanelButton(const juce::String& name)
+{
+    getControlPanel()->addButton(name);
+}
+
+void AudioDebuggerUI::addControlPanelSlider(int id, const CustomSlider& srcSlider, juce::LookAndFeel* lookAndFeel)
+{
+    getControlPanel()->addSlider(id, srcSlider, lookAndFeel);
+}
+
+void AudioDebuggerUI::addComponentToControlPanel(juce::Component* component)
+{
+    getControlPanel()->addAndMakeVisible(component);
+}
+
+void AudioDebuggerUI::updateParamsValues()
+{
+    getControlPanel()->updateControls();
+    updateControlPanelValues();
+}
+
+std::pair<int, int> getMinMax(short* buffer, int start, int end)
+{
+    int count = end - start;
+    if (count <= 0) {
+        return { 0, 0 };
+    }
+
+    int min = 0, max = 0;
+    for (int i = start; i < end; i++)
+    {
+        if (i == start || buffer[i] > max)
+            max = buffer[i];
+        if (i == start || buffer[i] < min)
+            min = buffer[i];
+    }
+
+    return { min, max };
+}
+
+float linear_interpolation(float value, float inMin, float inMax, float outMin, float outMax)
+{
+    float normalized = (value - inMin) / (inMax - inMin);
+    return outMin + normalized * (outMax - outMin);
+}
+
+bool almostEqual(int a, int b, int margin = 1)
+{
+    return std::abs(a - b) <= margin;
+}
+
+int64_t AudioDebuggerUI::getSampleAtPosition(int x) const
+{
+    if (!overview || getWidth() <= 0 || overview->getTotalSamples() <= 0)
+        return -1;
+
+    double ratio = x / (double)getWidth();
+    int64_t sample = viewportStartSample + (int64_t)(viewportLengthSamples * ratio);
+
+    return juce::jlimit((int64_t)0, overview->getTotalSamples() - 1, sample);
+}
+
+void AudioDebuggerUI::refreshChannelBounds()
+{
+    static constexpr float bottomMargin = 20.0f;
+    static constexpr float gapBetweenStereoPairs = 30.0f;
+    static constexpr float topMargin = gapBetweenStereoPairs;
+
+    const int inputNumChannels = m_numInputs;
+    const int outputNumChannels = m_numOutputs;
+    // +2 additional channels for diff view
+    const int totalChannels = inputNumChannels + outputNumChannels * 2;
+
+    const float totalHeight = getHeight();
+
+    auto& bounds = m_chanBounds.bounds;
+    bounds.resize(totalChannels);
+
+    int stereoPairs = totalChannels / 2;
+    const float totalGapHeight = (stereoPairs - 1) * gapBetweenStereoPairs;
+    const float availableHeight = totalHeight - totalGapHeight - topMargin - bottomMargin;
+    m_chanBounds.channelHeight = availableHeight / totalChannels;
+    m_chanBounds.metadataHeight = gapBetweenStereoPairs;
+
+    float currentY = topMargin;
+
+    for (int i = 0; i < totalChannels; ++i) {
+        bounds[i].minValue = currentY;
+        bounds[i].maxValue = currentY + m_chanBounds.channelHeight;
+        bounds[i].middle = bounds[i].minValue + m_chanBounds.channelHeight / 2.0f;
+        bounds[i].metaY = currentY - gapBetweenStereoPairs;
+
+        currentY += m_chanBounds.channelHeight;
+
+        if ((i % 2 == 1) && (i < totalChannels - 1)) {
+            currentY += gapBetweenStereoPairs;
+        }
+    }
+}
+
+int AudioDebuggerUI::getChannelHeight() const
+{
+    //const float channelHeight = getHeight() / (m_numInputs + m_numOutputs * 2);
+    //return channelHeight;
+    return m_chanBounds.channelHeight;
+}
+
+juce::Colour AudioDebuggerUI::getWaveformColour(uint8_t channelId) const
+{
+    if (channelId < m_numInputs)
+        return juce::Colours::blue;
+    else if (channelId < m_numInputs + m_numOutputs)
+        return juce::Colours::grey;
+    else
+        return m_lookAndFeel->findColour(AudioDebuggerLookAndFeel::waveformOutColourId);
+}
+
+juce::String AudioDebuggerUI::getSampleValueString(float value, uint8_t bitDepth) const
+{
+    return juce::String(AudioDebugger::floatToInt(value, bitDepth));
+}
+
+void AudioDebuggerUI::updateSampleCache_()
+{
+    if (!overview)
+        return;
+
+    int64_t padding = viewportLengthSamples / 4;
+    int64_t cacheStart = std::max((int64_t)0, viewportStartSample - padding);
+    int64_t cacheEnd = std::min(overview->getTotalSamples(),
+        viewportStartSample + viewportLengthSamples + padding);
+    int64_t cacheLength = cacheEnd - cacheStart;
+
+    if (sampleCache.isValid() &&
+        sampleCache.contains(viewportStartSample) &&
+        sampleCache.contains(viewportStartSample + viewportLengthSamples - 1))
+    {
+        return;
+    }
+
+    sampleCache.clear();
+    sampleCache.startSample = cacheStart;
+    sampleCache.numSamples = cacheLength;
+
+    if (!overview->getSamplesFromFile(cacheStart, cacheLength, sampleCache.samples))
+    {
+        sampleCache.clear();
+    }
+}
+
+float AudioDebuggerUI::getFontSize(double pixelsPerSample) const
+{
+    float fontSize = 9.0f;
+    if (pixelsPerSample >= 50.0) {
+        fontSize = 11.0f;
+    }
+    else if (pixelsPerSample >= 30.0) {
+        fontSize = 10.0f;
+    }
+    else if (pixelsPerSample >= 15.0) {
+        fontSize = 9.0f;
+    }
+    else {
+        fontSize = 8.0f;
+    }
+
+    return fontSize;
+}
+
+void AudioDebuggerUI::paint(juce::Graphics& g)
+{
+    auto* lnf = m_lookAndFeel.get();
+    g.fillAll(lnf->findColour(AudioDebuggerLookAndFeel::backgroundColourId));
+
+    const auto textColour = lnf->findColour(AudioDebuggerLookAndFeel::markerLabelColourId);
+
+    if (!overview)
+    {
+        g.setColour(textColour);
+        g.drawText("No audio file loaded", getLocalBounds(),
+            juce::Justification::centred);
+        return;
+    }
+
+    if (viewportLengthSamples <= 0)
+        return;
+
+    {
+        double samplesPerPixel = viewportLengthSamples / (double)getWidth();
+        const double verticalZoom = zoomVSlider->getValue();
+        const int mipmapLevel = overview->getMipMapBuilder()->selectBestLevel(samplesPerPixel, 0);
+        const bool bIsUsingMipmaps = (samplesPerPixel > RAW_SAMPLE_THRESHOLD);
+        m_parentComponent->setZoomText(zoomLevel, verticalZoom, bIsUsingMipmaps, mipmapLevel, samplesPerPixel);
+    }
+
+    if (isLoadingFile())
+    {
+        auto currentFont = g.getCurrentFont();
+
+        g.setFont(juce::Font(24.0f));
+        g.setColour(textColour);
+        juce::String progressText = juce::String(overview->getLoadingProgress()) + "% - Generating waveform...";
+        int textWidth = g.getCurrentFont().getStringWidth(progressText);
+        int textHeight = g.getCurrentFont().getHeight();
+
+        juce::Rectangle<int> textBounds((getWidth() - textWidth) / 2 - 10, (getHeight() - textHeight) / 2 - 10, textWidth + 20, textHeight + 20);
+        g.setColour(juce::Colours::black);
+        g.fillRect(textBounds);
+
+        g.setColour(juce::Colours::white);
+        g.drawText(progressText, getLocalBounds().reduced(10), juce::Justification::centred);
+
+        g.setFont(currentFont);
+    }
+}
+
+bool AudioDebuggerUI::shouldPaintDetailedUI() const
+{
+    double samplesPerPixel = viewportLengthSamples / (double)getWidth();
+    double pixelsPerSample = getWidth() / (double)viewportLengthSamples;
+
+    return (samplesPerPixel <= RAW_SAMPLE_THRESHOLD && !overview->isLiveMonitoring() && !isLoadingFile());
+}
+
+bool AudioDebuggerUI::shouldPaintExtraDetailedUI() const
+{
+    double pixelsPerSample = getWidth() / (double)viewportLengthSamples;
+    static constexpr double SAMPLE_VALUE_DISPLAY_THRESHOLD = 20.0;
+
+    return (pixelsPerSample >= SAMPLE_VALUE_DISPLAY_THRESHOLD);
+}
+
+void AudioDebuggerUI::resized()
+{
+    zoomVSlider->setBounds(getWidth() - 40, getHeight() - 100, 40, 100);
+
+    refreshChannelBounds();
+
+    for (size_t i = 0; i < m_channels.size(); ++i)
+    {
+        const auto& b = m_chanBounds.bounds[i];
+        m_channels[i]->setBounds(0,
+            (int)b.minValue,
+            getWidth(),
+            (int)(b.maxValue - b.minValue));
+    }
+
+    if (m_overlay)
+        m_overlay->setBounds(getLocalBounds());
+}
+
+void AudioDebuggerUI::sliderValueChanged(juce::Slider* slider)
+{
+    if (slider == zoomVSlider.get())
+    {
+        repaint();
+    }
+}
+
+void AudioDebuggerUI::scrollBarMoved(double newRangeStart)
+{
+    if (!overview)
+        return;
+
+    int64_t currentLength = viewportLengthSamples;
+
+    viewportStartSample = (int64_t)newRangeStart;
+
+    viewportStartSample = juce::jlimit((int64_t)0,
+        overview->getTotalSamples() - currentLength,
+        viewportStartSample);
+
+    viewportCenter = (viewportStartSample + currentLength / 2) /
+        (double)overview->getTotalSamples();
+
+    repaint();
+}
+
+void AudioDebuggerUI::autoConnectToLastFile()
+{
+
+}
+
+void AudioDebuggerUI::timerCallback()
+{
+    auto* pDebugger = AudioDebug::AudioDebugger::get();
+    if (!pDebugger)
+        return;
+
+    // Use the following code to auto-load a file if required
+    auto* autoConnectButton = m_parentComponent->getAutoConnectButton();
+    const bool bAutoConnect = autoConnectButton->isArmed();
+    const bool bIsConnected = autoConnectButton->isConnected();
+    if (bAutoConnect && pDebugger->getAsyncWriterStatusChanged())
+    {
+        const auto& filename = pDebugger->getLastFileName();
+        if (!filename.empty())
+        {
+            auto fullPath = juce::File::getCurrentWorkingDirectory().getChildFile(filename);
+            if (fullPath.existsAsFile())
+            {
+                loadAudioFile(fullPath, true);
+                autoConnectButton->setConnected();
+            }
+        }
+    }
+    else if (bIsConnected && pDebugger->getAsyncWriterGotDisconnected())
+    {
+        autoConnectButton->setDisconnected();
+        triggerCaptureEnd();
+    }
+
+    if (overview)
+    {
+        bool overviewLoading = (overview->isLoading());
+        if (overviewLoading != m_isLoading)
+        {
+            repaint();
+
+            if (!overviewLoading)
+            {
+                setGenerationButtonsEnabled(true);
+            }
+
+            m_isLoading = overviewLoading;
+            m_repaintedRegenSamples = 0;
+        }
+        // Below can be enabled for real-time refresh but is a bit slow
+        else if (overview->getLiveRefreshRequired())
+        {
+            if (overview->isLiveMode())
+            {
+                updateVisibleRange();
+                repaint();
+            }
+            else
+            {
+                const float width = (float)getWidth();
+                int32_t lastRepaint = m_repaintedRegenSamples;
+                int32_t endRepaint = overview->getRegenSamplesProcessed();
+
+                const float x1 = sampleToPixel(lastRepaint, width);
+                const float x2 = sampleToPixel(endRepaint, width);
+                const int left = std::max(0, (int)std::floor(x1) - 1);
+                const int right = std::min((int)width, (int)std::ceil(x2) + 1);
+
+                if (right > left)
+                {
+                    const int channelStart = m_numInputs + m_numOutputs;
+                    const int totalChannels = m_numInputs + m_numOutputs * 2;
+                    for (int i = channelStart; i < totalChannels; ++i)
+                    {
+                        m_channels[i]->repaint(left, 0, right - left, getHeight());
+                    }
+                }
+
+                m_repaintedRegenSamples = endRepaint;
+            }
+        }
+    }
+}
+
+void AudioDebuggerUI::onBufferLengthChanged()
+{
+    m_numInputs = 0;
+}
+
+void AudioDebuggerUI::mouseMove(const juce::MouseEvent& event)
+{
+    currentMousePos = event.position;
+
+    if (onMouseSampleChanged)
+    {
+        int64_t sample = getSampleAtPosition(event.getPosition().x);
+        onMouseSampleChanged(sample);
+    }
+}
+
+void AudioDebuggerUI::mouseWheelMove(const juce::MouseEvent& event, const juce::MouseWheelDetails& wheel)
+{
+    if (overview)
+    {
+        auto modifiers = event.mods;
+
+        if (modifiers.isCtrlDown())
+        {
+            double mouseRatio = event.getPosition().x / (double)getWidth();
+            int64_t sampleUnderMouse = viewportStartSample + (int64_t)(viewportLengthSamples * mouseRatio);
+
+            double coeff = 1.0;
+            const bool zoomingOut = (wheel.deltaY < 0);
+
+            if (zoomLevel < 10.0) {
+                coeff = 0.3;
+            }
+            else if (zoomLevel < 100.0) {
+                coeff = 0.5;
+            }
+            else if (zoomLevel < 1000.0) {
+                coeff = 0.8;
+            }
+            else if (zoomLevel < 10000.0) {
+                coeff = 1.5;
+            }
+            else {
+                coeff = 3.0;
+            }
+
+            double zoomFactor = 1.0 + (wheel.deltaY * coeff);
+            zoomFactor = juce::jmax(zoomFactor, 0.7);
+
+            double oldZoom = zoomLevel;
+            setZoomLevel(zoomLevel * zoomFactor);
+
+            m_parentComponent->setZoomLevel(zoomLevel);
+
+            if (oldZoom != zoomLevel)
+            {
+                viewportCenter = sampleUnderMouse / (double)overview->getTotalSamples();
+                updateVisibleRange();
+
+                int64_t currentSampleAtMouse = viewportStartSample + (int64_t)(viewportLengthSamples * mouseRatio);
+                int64_t sampleDiff = sampleUnderMouse - currentSampleAtMouse;
+
+                viewportStartSample += sampleDiff;
+                viewportStartSample = juce::jlimit((int64_t)0, overview->getTotalSamples() - viewportLengthSamples, viewportStartSample);
+
+                viewportCenter = (viewportStartSample + viewportLengthSamples / 2) / (double)overview->getTotalSamples();
+
+                repaint();
+            }
+        }
+        else if (modifiers.isShiftDown())
+        {
+            auto currZoomVal = zoomVSlider->getValue();
+            zoomVSlider->setValue(currZoomVal + wheel.deltaY, juce::NotificationType::dontSendNotification);
+            repaint();
+        }
+        else
+        {
+            double scrollAmount = wheel.deltaY * viewportLengthSamples * 0.1;
+
+            int64_t newStartSample = viewportStartSample - (int64_t)scrollAmount;
+
+            if (newStartSample == viewportStartSample)
+            {
+                if (scrollAmount < 0.0) scrollAmount = -1.0;
+                else if (scrollAmount > 0.0) scrollAmount = 1.0;
+
+                newStartSample = viewportStartSample - (int64_t)scrollAmount;
+            }
+
+            newStartSample = juce::jlimit((int64_t)0,
+                overview->getTotalSamples() - viewportLengthSamples,
+                newStartSample);
+
+            viewportStartSample = newStartSample;
+            viewportCenter = (viewportStartSample + viewportLengthSamples / 2) /
+                (double)overview->getTotalSamples();
+
+            repaint();
+
+            m_parentComponent->getScrollbar()->setCurrentRange((double)viewportStartSample, (double)(viewportLengthSamples), juce::dontSendNotification);
+        }
+    }
+}
+
+void AudioDebuggerUI::mouseDrag(const juce::MouseEvent& e)
+{
+    if (!isDragging || !overview)
+        return;
+
+    int dx = e.getPosition().x - lastMousePos.x;
+    lastMousePos = e.getPosition();
+
+    double pixelsPerSample = getWidth() / (double)viewportLengthSamples;
+    double samplesDelta = -dx / pixelsPerSample;
+
+    int64_t newStartSample = viewportStartSample + (int64_t)samplesDelta;
+
+    setNewStartSample(newStartSample);
+
+    repaint();
+}
+
+void AudioDebuggerUI::setNewStartSample(int64_t newStartSample)
+{
+    newStartSample = juce::jlimit((int64_t)0,
+        overview->getTotalSamples() - viewportLengthSamples,
+        newStartSample);
+
+    viewportStartSample = newStartSample;
+    viewportCenter = (viewportStartSample + viewportLengthSamples / 2) /
+        (double)overview->getTotalSamples();
+
+    m_parentComponent->getScrollbar()->setCurrentRangeStart((double)viewportStartSample, juce::dontSendNotification);
+}
+
+bool AudioDebuggerUI::isSampleWithinVisibleRange(int64_t sampleId)
+{
+    return (sampleId >= viewportStartSample && sampleId <= viewportStartSample + viewportLengthSamples);
+}
+
+void AudioDebuggerUI::setZoomLevel(double newZoom) {
+    zoomLevel = juce::jlimit(MIN_ZOOM, MAX_ZOOM, newZoom);
+    updateVisibleRange();
+    repaint();
+}
+
+void AudioDebuggerUI::mouseDown(const juce::MouseEvent& event)
+{
+    if (event.mods.isRightButtonDown())
+    {
+        juce::PopupMenu menu;
+
+        menu.addItem(1, "Debug this sample");
+
+        menu.showMenuAsync(juce::PopupMenu::Options(),
+            [&](int result)
+            {
+                if (result == 1)
+                {
+                    // TODO
+                    //float currentMousePosX = currentMousePos.getX();
+                    //int32_t currentSampleUnderMouse = coordinates_to_sample_val(currentMousePosX);
+                    //currentSampleUnderMouse = std::max(0, std::min(currentSampleUnderMouse, (int32_t)m_bufferSize));
+                    //AudioDebug::AudioDebugger::get()->setSampleToDebug(currentSampleUnderMouse);
+
+                    //regenerateOutput(currentSampleUnderMouse);
+                }
+            }
+        );
+    }
+    else if (event.mods.isLeftButtonDown())
+    {
+        lastMousePos = event.getPosition();
+        highlightedDiff = getSampleAtPosition(lastMousePos.x);
+        isDragging = true;
+    }
+}
+
+void AudioDebuggerUI::mouseExit(const juce::MouseEvent& e)
+{
+    if (onMouseSampleChanged) {
+        onMouseSampleChanged(-1);
+    }
+}
+
+void AudioDebuggerUI::differenceThresholdChanged(int threshold)
+{
+    if (auto* diffDetector = getDiffDetector())
+    {
+        diffDetector->setThreshold(threshold);
+    }
+}
+
+bool AudioDebuggerUI::getOption(uint8_t id) const
+{
+    return getControlPanel()->isOptionEnabled(id);
+}
+
+void AudioDebuggerUI::goToDiff(EDiffToGo type)
+{
+    auto* diffDetector = getDiffDetector();
+    if (!diffDetector)
+        return;
+
+    auto differences = diffDetector->getAll();
+
+    if (differences.empty())
+        return;
+
+    switch (type)
+    {
+    case EDiffToGo::Previous:
+    {
+        for (auto it = differences.rbegin(); it != differences.rend(); ++it)
+        {
+            auto& diff = *it;
+            if (diff.endSample < highlightedDiff)
+            {
+                highlightedDiff = diff.endSample;
+                break;
+            }
+        }
+        break;
+    }
+    case EDiffToGo::Next:
+    {
+        for (const auto& diff : differences)
+        {
+            if (diff.startSample > highlightedDiff)
+            {
+                highlightedDiff = diff.startSample;
+                break;
+            }
+        }
+
+        break;
+    }
+    default:
+        jassert(false);
+    }
+
+    if (!isSampleWithinVisibleRange(highlightedDiff))
+    {
+        int64_t newStart = highlightedDiff - (viewportLengthSamples / 8);
+        setNewStartSample(newStart);
+    }
+
+    repaint();
+}
+
+void AudioDebuggerUI::setGenerationButtonsEnabled(bool bEnable)
+{
+    getControlPanel()->setGenerationButtonsEnabled(bEnable);
+    m_parentComponent->setGenerationButtonsEnabled(bEnable);
+}
+
+
+void AudioDebuggerUI::regenerateOutput(int32_t sampleItToDebug)
+{
+    auto* autoConnectButton = m_parentComponent->getAutoConnectButton();
+    if (autoConnectButton->isConnected())
+    {
+        autoConnectButton->setDisconnected();
+        triggerCaptureEnd();
+    }
+
+    {
+        juce::ScopedLock lock(cacheLock);
+        sampleCache.clear();
+        invalidateCustomCache_();
+    }
+
+    setGenerationButtonsEnabled(false);
+    overview->startOutputRegeneration(m_processor);
+}
+
+bool AudioDebuggerUI::loadAudioFile(const juce::File& file, bool liveMode)
+{
+    if (!file.existsAsFile())
+    {
+        overview.reset();
+        setGenerationButtonsEnabled(false);
+        return false;
+    }
+
+    DiffDetector::MaskPreset diffMaskPreset = DiffDetector::MaskPreset::Full;
+
+    if (auto* oldDiffDetector = getDiffDetector()) {
+        diffMaskPreset = oldDiffDetector->getMaskPreset();
+    }
+
+    overview.reset(new WaveformOverview());
+
+    zoomLevel = 1.0;
+
+    m_parentComponent->init();
+    zoomVSlider->setValue(1.0, juce::dontSendNotification);
+    viewportCenter = 0.5;
+
+    auto* diffDetector = overview->getDiffDetector();
+    diffDetector->setMaskPreset(diffMaskPreset);
+    diffDetector->setThreshold(m_parentComponent->getDiffThreshold());
+
+    int outNumInChans = 0;
+    bool bRet = overview->openRptFile(file.getFullPathName(), zoomLevel, getWidth(), liveMode, outNumInChans);
+
+    if (!bRet) {
+        overview.reset();
+        setGenerationButtonsEnabled(false);
+        return false;
+    }
+
+    setGenerationButtonsEnabled(true);
+
+    m_numInputs = outNumInChans;
+
+    const int totalChannels = m_numInputs + m_numOutputs * 2;
+    m_channels.reserve(totalChannels);
+    m_channels.clear();
+    for (int i = 0; i < totalChannels; ++i)
+    {
+        auto ch = std::make_unique<ChannelComponent>(*this, i);
+        addAndMakeVisible(ch.get());
+        m_channels.push_back(std::move(ch));
+    }
+
+    m_overlay = std::make_unique<OverlayComponent>(*this);
+    addAndMakeVisible(m_overlay.get());
+
+    resized();
+
+    AudioDebugger::get()->setNumInputsOutputs(m_numInputs, m_numOutputs);
+
+    refreshChannelBounds();
+
+    updateVisibleRange();
+    repaint();
+
+    return true;
+}
+
+const std::vector<float>* AudioDebuggerUI::getCachedSamplesForChannel(int chanId) const
+{
+    if (!sampleCache.isValid())
+        return nullptr;
+    if (chanId < 0 || chanId >= (int)sampleCache.samples.size())
+        return nullptr;
+    return &sampleCache.samples[chanId];
+}
+
+bool AudioDebuggerUI::isLoadingFile() const
+{
+    return (!overview->isLiveMode() && overview->isLoading());
+}
+
+int64_t AudioDebuggerUI::calculateViewportLength(double zoom) const
+{
+    if (!overview)
+        return 0;
+
+    int64_t totalSamples = overview->getTotalSamples();
+
+    double normalizedZoom = zoom / MIN_ZOOM;
+
+    double logMin = std::log(MIN_VIEWPORT_SAMPLES);
+    double logMax = std::log(totalSamples);
+    double logZoom = std::log(normalizedZoom);
+    double maxLogZoom = std::log(MAX_ZOOM / MIN_ZOOM);
+
+    double t = logZoom / maxLogZoom;
+    double logViewportLength = logMax - t * (logMax - logMin);
+
+    int64_t viewportLength = (int64_t)std::exp(logViewportLength);
+
+    viewportLength = std::max(MIN_VIEWPORT_SAMPLES, viewportLength);
+    viewportLength = std::min(totalSamples, viewportLength);
+
+    return viewportLength;
+}
+
+double AudioDebuggerUI::calculateZoomFromViewportLength(int64_t viewportLength) const
+{
+    if (!overview)
+        return MIN_ZOOM;
+
+    int64_t totalSamples = overview->getTotalSamples();
+
+    viewportLength = std::max(MIN_VIEWPORT_SAMPLES, viewportLength);
+    viewportLength = std::min(totalSamples, viewportLength);
+
+    double logMin = std::log(MIN_VIEWPORT_SAMPLES);
+    double logMax = std::log(totalSamples);
+    double logViewportLength = std::log(viewportLength);
+
+    double t = (logMax - logViewportLength) / (logMax - logMin);
+    double maxLogZoom = std::log(MAX_ZOOM / MIN_ZOOM);
+    double logZoom = t * maxLogZoom;
+
+    double zoom = std::exp(logZoom) * MIN_ZOOM;
+
+    return juce::jlimit(MIN_ZOOM, MAX_ZOOM, zoom);
+}
+
+void AudioDebuggerUI::updateVisibleRange()
+{
+    if (!overview)
+        return;
+
+    int64_t totalSamples = overview->getTotalSamples();
+
+    viewportLengthSamples = calculateViewportLength(zoomLevel);
+
+    int64_t centerSample = (int64_t)(totalSamples * viewportCenter);
+    viewportStartSample = centerSample - (viewportLengthSamples / 2);
+
+    // Clamp to valid range
+    viewportStartSample = std::max((int64_t)0, viewportStartSample);
+    if (viewportStartSample + viewportLengthSamples > totalSamples) {
+        viewportStartSample = totalSamples - viewportLengthSamples;
+    }
+    viewportStartSample = std::max((int64_t)0, viewportStartSample);
+
+    auto* scrollbar = m_parentComponent->getScrollbar();
+    scrollbar->setRangeLimits(0.0, (double)totalSamples, juce::dontSendNotification);
+    scrollbar->setCurrentRange((double)viewportStartSample, (double)(viewportLengthSamples), juce::dontSendNotification);
+}
+
+
+void AudioDebuggerUI::importbinReport()
+{
+    m_fileChooser = std::make_unique<juce::FileChooser>("Select a previously exported bin report",
+        juce::File(),
+        "*.rpt");
+
+    auto folderChooserFlags = juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles;
+
+    m_fileChooser->launchAsync(folderChooserFlags, [this](const juce::FileChooser& chooser)
+    {
+        auto selected = chooser.getResult();
+        if (selected.existsAsFile())
+        {
+            m_lastSelectedFile = selected;
+            loadAudioFile(selected, false);
+        }
+    });
+}
+
+void AudioDebuggerUI::importgenFile()
+{
+    m_fileChooser = std::make_unique<juce::FileChooser>("Select a regenerated report",
+        juce::File(),
+        "*.gen");
+
+    auto folderChooserFlags = juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles;
+
+    m_fileChooser->launchAsync(folderChooserFlags, [this](const juce::FileChooser& chooser)
+    {
+        auto selected = chooser.getResult();
+        if (selected.existsAsFile())
+        {
+            overview->startOpenGenFile(selected.getFullPathName());
+        }
+    });
+}
+
+void AudioDebuggerUI::refreshGenFile()
+{
+    overview->reopenSameGenFile();
+}
+
+void AudioDebuggerUI::exportbinReport()
+{
+    juce::File sourceFile;
+    const auto& filename = AudioDebug::AudioDebugger::get()->getLastFileName();
+    if (!filename.empty())
+    {
+        sourceFile = juce::File::getCurrentWorkingDirectory().getChildFile(filename);
+    }
+
+    if (!sourceFile.existsAsFile())
+    {
+        juce::AlertWindow::showMessageBoxAsync(
+            juce::MessageBoxIconType::WarningIcon,
+            "Session file not found",
+            "There is no current session to export!",
+            "OK"
+        );
+        return;
+    }
+
+    m_fileChooser = std::make_unique<juce::FileChooser>("Export current report view to a bin file",
+        juce::File(),
+        "*.rpt");
+
+    auto folderChooserFlags = juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles;
+
+    m_fileChooser->launchAsync(folderChooserFlags, [this, sourceFile](const juce::FileChooser& chooser)
+    {
+        auto result = chooser.getResult();
+        if (result.getFileName().isNotEmpty())
+        {
+            bool bSuccess = sourceFile.copyFileTo(result.getFullPathName());
+            if (!bSuccess)
+            {
+                juce::AlertWindow::showMessageBoxAsync(
+                    juce::MessageBoxIconType::WarningIcon,
+                    "Error",
+                    "There was an error while creating the file.",
+                    "OK"
+                );
+            }
+        }
+    });
+}
+
+
+void AudioDebuggerUI::setAutoWriteRptFile(bool bEnable)
+{
+    m_parentComponent->setAutoWriteRptFile(bEnable);
+    AudioDebug::AudioDebugger::get()->setAutoWriteOutputFile(bEnable);
+}
+
+void AudioDebuggerUI::setRptFileMaxLength(int numSeconds)
+{
+    m_parentComponent->setRptFileMaxLength(numSeconds);
+    AudioDebug::AudioDebugger::get()->setRptFileMaxLength(numSeconds);
+}
+
+void AudioDebuggerUI::setUIDarkMode(bool bEnable)
+{
+    m_lookAndFeel->setDarkMode(bEnable);
+    repaint();
+}
+
+void AudioDebuggerUI::setSliderValue(uint8_t id, float value)
+{
+    getControlPanel()->setSliderValue(id, value);
+}
+
+void AudioDebuggerUI::setButtonEnabled(uint8_t id, bool bEnabled)
+{
+    getControlPanel()->setButtonEnabled(id, bEnabled);
+}
+
+//-----------------------------------------------------------------------------
+MainMenuModel::MainMenuModel(AudioDebuggerUI* parent)
+    : m_parent(parent)
+{
+}
+
+juce::StringArray MainMenuModel::getMenuBarNames()
+{
+    return { "File", "Options"};
+}
+
+juce::PopupMenu MainMenuModel::getMenuForIndex(int menuIndex, const juce::String& menuName)
+{
+    juce::PopupMenu menu;
+
+    if (menuIndex == 0) // File menu
+    {
+        menu.addItem(IMPORT_RPT, "Import standard .rpt report");
+        menu.addItem(IMPORT_GEN, "Import Unit Test .gen report");
+        menu.addItem(EXPORT, "Export .rpt");
+        menu.addSeparator();
+    }
+    else if (menuIndex == 1)
+    {
+        menu.addItem(DARKMODE, "Dark mode", true, m_optionDarkMode);
+    }
+
+    return menu;
+}
+
+void MainMenuModel::menuItemSelected(int menuItemID, int menuIndex)
+{
+    switch (menuItemID)
+    {
+    case IMPORT_RPT:
+    {
+        m_parent->importbinReport();
+        break;
+    }
+    case IMPORT_GEN:
+    {
+        m_parent->importgenFile();
+        break;
+    }
+    case EXPORT:
+    {
+        m_parent->exportbinReport();
+        break;
+    }
+    case DARKMODE:
+    {
+        m_optionDarkMode = !m_optionDarkMode;
+        m_parent->setUIDarkMode(m_optionDarkMode);
+        menuItemsChanged();
+        break;
+    }
+    }
+}
+
+//-----------------------------------------------------------------------------
+AudioDebuggerLookAndFeel::AudioDebuggerLookAndFeel()
+{
+    setDarkMode(true);
+}
+
+void AudioDebuggerLookAndFeel::setDarkMode(bool bEnable)
+{
+    if (bEnable)
+    {
+        setColour(juce::Label::textColourId, juce::Colours::white);
+
+        setColour(backgroundColourId, juce::Colour(0xff1a1a1a));
+        setColour(waveformSeparatorColourId, juce::Colours::white);
+        setColour(waveformOutColourId, juce::Colours::white);
+        setColour(markerLabelColourId, juce::Colours::white);
+        setColour(markerOutlineColourId, juce::Colours::black);
+    }
+    else
+    {
+        setColour(juce::Label::textColourId, juce::Colours::black);
+
+        setColour(backgroundColourId, juce::Colours::white);
+        setColour(waveformSeparatorColourId, juce::Colours::black);
+        setColour(waveformOutColourId, juce::Colours::black);
+        setColour(markerLabelColourId, juce::Colours::black);
+        setColour(markerOutlineColourId, juce::Colours::white);
+    }
+
+    setColour(juce::Slider::textBoxBackgroundColourId, juce::Colours::black);
+    setColour(juce::Slider::textBoxTextColourId, juce::Colours::white);
+    setColour(juce::Slider::textBoxOutlineColourId, juce::Colours::white);
+    setColour(juce::Slider::backgroundColourId, juce::Colours::white);
+    setColour(juce::ToggleButton::textColourId, juce::Colours::black);
+    setColour(juce::ToggleButton::tickColourId, juce::Colours::black);
+}
+
+//-----------------------------------------------------------------------------
+WaveformPopup::WaveformPopup(const juce::String& name, AudioDebuggerUI* audioDebugger, std::function<void()> onCloseCallback)
+    : DocumentWindow(name, juce::Colours::darkgrey, DocumentWindow::allButtons)
+    , m_onCloseCallback(std::move(onCloseCallback))
+    , m_audioDebugger(audioDebugger)
+{
+    setUsingNativeTitleBar(false);
+
+    m_mainComponent.reset(new MainComponent(audioDebugger));
+
+    assert(m_audioDebugger);
+    m_audioDebugger->initialize();
+
+    centreWithSize(800, 600);
+    setContentNonOwned(m_mainComponent.get(), true);
+    setResizable(true, true);
+
+    setVisible(true);
+}
+
+WaveformPopup::~WaveformPopup()
+{
+    setMenuBar(nullptr);
+
+    m_audioDebugger->terminate();
+}
+
+void WaveformPopup::closeButtonPressed()
+{
+    setVisible(false);
+
+    if (m_onCloseCallback)
+        m_onCloseCallback();
+}
+
+} // namespace AudioDebug

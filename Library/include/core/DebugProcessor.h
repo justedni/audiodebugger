@@ -1,0 +1,29 @@
+#pragma once
+
+#include <string>
+#include <map>
+#include <vector>
+#include <mutex>
+
+namespace AudioDebug {
+
+struct RawMidiMessage;
+
+class DebugProcessor
+{
+public:
+	DebugProcessor();
+	virtual ~DebugProcessor();
+
+	// Abstract interface
+	virtual int getLatencySamples(int samplesPerBlock) const { return 0; }
+	virtual void prepareToPlayHook(double sampleRate, int samplesPerBlock, int numChannelsIn) {}
+	virtual void processBlockHook(int numSamples, float** inputs, int32_t numChannelsIn, const std::vector<RawMidiMessage>& midiMessages, float** outputs) {}
+
+	virtual void setSliderParam(uint8_t id, float value) {}
+	virtual float getSliderParam(uint8_t id) const { return 0.0f; }
+	virtual void setButtonEnabled(uint8_t id, bool bEnabled) {}
+	virtual bool getButtonEnabled(uint8_t id) const { return false; }
+};
+
+} // namespace AudioDebug
