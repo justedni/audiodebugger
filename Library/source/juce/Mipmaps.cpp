@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Vincent Dortel
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 #include "Mipmaps.h"
 
 #include <assert.h>
