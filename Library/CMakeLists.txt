@@ -31,6 +31,7 @@ set(JUCE_SOURCE
     source/juce/DebuggerSpawner.cpp
     source/juce/DiffDetector.cpp
     source/juce/DiffDetector.h
+    source/juce/JuceDebugProcessor.cpp
     source/juce/MarkerStore.cpp
     source/juce/MarkerStore.h
     source/juce/MipmapBuilder.cpp

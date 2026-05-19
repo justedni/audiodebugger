@@ -371,7 +371,7 @@ void WaveformOverview::updateRegenerateThread(DebugProcessor* processor)
     std::string genFileName;
     pDebugger->startRegenerate(header, genFileName);
 
-    processor->prepareToPlayHook(header.sample_rate, header.block_size, numInChannels);
+    processor->prepareToPlayHook(header.sample_rate, header.block_size);
 
     ReportFile* genFile = nullptr;
     {
@@ -437,7 +437,7 @@ void WaveformOverview::updateRegenerateThread(DebugProcessor* processor)
 
     auto generateAndDiff = [&]()
     {
-        processor->processBlockHook(numberOfSamplesPerBlock, tempInPtrs.data(), numInChannels, localMidiMessages, outBuffer);
+        processor->processBlockHook(numberOfSamplesPerBlock, tempInPtrs.data(), localMidiMessages, outBuffer);
 
         samplesProcessed += numberOfSamplesPerBlock;
 

@@ -1,8 +1,6 @@
 #pragma once
 
-#include <juce_audio_processors/juce_audio_processors.h>
-
-#include "core/DebugProcessor.h"
+#include "juce/JuceDebugProcessor.h"
 
 namespace AudioDebug {
 struct RawMidiMessage;
@@ -10,16 +8,17 @@ struct RawMidiMessage;
 
 class SamplePluginEditor;
 
-class SamplePluginProcessor : public juce::AudioProcessor
-                            , public AudioDebug::DebugProcessor
+class SamplePluginProcessor : public AudioDebug::JuceDebugProcessor
 {
 public:
     SamplePluginProcessor();
     ~SamplePluginProcessor() override;
 
-    void prepareToPlay (double sampleRate, int samplesPerBlock) override;
-    void releaseResources() override;
+    //AudioDebug::JuceDebugProcessor interface
+    void processBlockRegenerate(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages) override;
 
+    //juce::AudioProcessor interface
+    void releaseResources() override {}
     bool isBusesLayoutSupported(const BusesLayout& layouts) const override;
 
     void processBlock(juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
@@ -42,11 +41,6 @@ public:
 
     void getStateInformation(juce::MemoryBlock& destData) override {}
     void setStateInformation(const void* data, int sizeInBytes) override {}
-
-    //AudioDebug::DebugProcessor interface
-public:
-    void prepareToPlayHook(double sampleRate, int samplesPerBlock, int numChannelsIn) override;
-    void processBlockHook(int numSamples, float** inputs, int32_t numChannelsIn, const std::vector<AudioDebug::RawMidiMessage>& inMessages, float** outputs) override;
 
 private:
     void processInternal(int numSamples, juce::MidiBuffer& midiMessages, float* const* data);

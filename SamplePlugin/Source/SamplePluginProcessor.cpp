@@ -4,27 +4,13 @@
 #include "core/AudioDebug.h"
 
 SamplePluginProcessor::SamplePluginProcessor()
-    : AudioProcessor(BusesProperties()
+    : AudioDebug::JuceDebugProcessor(BusesProperties()
         .withInput("Input", juce::AudioChannelSet::stereo(), true)
         .withOutput("Output", juce::AudioChannelSet::stereo(), true))
 {
 }
 
 SamplePluginProcessor::~SamplePluginProcessor()
-{
-}
-
-void SamplePluginProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
-{
-    AudioDebug::AudioDebugger::get()->initDebugProcessor(
-        std::round(sampleRate),
-        samplesPerBlock,
-        getTotalNumInputChannels(),
-        getTotalNumOutputChannels(),
-        AudioDebug::EBitDepth::Int32);
-}
-
-void SamplePluginProcessor::releaseResources()
 {
 }
 
@@ -69,7 +55,7 @@ void SamplePluginProcessor::processBlock(juce::AudioBuffer<float> &buffer, juce:
 void SamplePluginProcessor::processInternal(int numSamples, juce::MidiBuffer& midiMessages, float* const* data)
 {
     auto* pDebugger = AudioDebug::AudioDebugger::get();
-    if (pDebugger && m_isPlaying && !pDebugger->isRegenerating())
+    if (pDebugger && m_isPlaying)
     {
         // Push Midi events to Debugger
         {
@@ -101,22 +87,9 @@ void SamplePluginProcessor::processInternal(int numSamples, juce::MidiBuffer& mi
     }
 }
 
-void SamplePluginProcessor::prepareToPlayHook(double sampleRate, int samplesPerBlock, int numChannelsIn)
+void SamplePluginProcessor::processBlockRegenerate(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
 {
-    prepareToPlay(sampleRate, samplesPerBlock);
-}
-
-void SamplePluginProcessor::processBlockHook(int numSamples, float** inputs, int32_t numChannelsIn, const std::vector<AudioDebug::RawMidiMessage>& inMessages, float** outputs)
-{
-    juce::MidiBuffer juceMidiMessages;
-
-    for (auto& msg : inMessages)
-    {
-        juceMidiMessages.addEvent(msg.data, static_cast<int>(msg.dataSize), msg.position);
-    }
-
-    // Call your internal process function here
-    // ex: processInternal(numSamples, juceMidiMessages, inputs, outputs);
+    processInternal(buffer.getNumSamples(), midiMessages, buffer.getArrayOfWritePointers());
 }
 
 juce::AudioProcessorEditor* SamplePluginProcessor::createEditor()
