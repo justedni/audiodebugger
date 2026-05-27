@@ -131,7 +131,7 @@ void ChannelComponent::paintWaveformFromRawSamples(juce::Graphics& g)
 
     const bool bDrawRects = m_debugger.getOption(EDefaultOptions::SamplesAsRects);
     const double samplesPerPixel = m_debugger.getSamplesPerPixel();
-    const bool bDisplayAsPath    = (samplesPerPixel < 2.0);
+    const bool bDisplayAsPath = true;// (samplesPerPixel < 2.0);
 
     g.setColour(m_debugger.getWaveformColour((uint8_t)m_globalChanId));
 

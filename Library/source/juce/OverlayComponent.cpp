@@ -27,10 +27,7 @@ void OverlayComponent::paint(juce::Graphics& g)
     if (!m_debugger.getOverview() || m_debugger.getViewportLengthSamples() <= 0)
         return;
 
-    if (m_debugger.shouldPaintDetailedUI())
-        paintDetailedDifferences(g);
-    else
-        paintMipmapDifferences(g);
+    paintMipmapDifferences(g);
 
     paintWaveformSeparators(g);
 
@@ -80,7 +77,7 @@ void OverlayComponent::paintMipmapDifferences(juce::Graphics& g)
     for (const auto& diff : differences)
     {
         float startX = (float)((diff.startSample - viewportStartSample) / (double)viewportLengthSamples * getWidth());
-        float endX = (float)((diff.endSample - viewportStartSample) / (double)viewportLengthSamples * getWidth());
+        float endX = (float)((diff.endSample + 1 - viewportStartSample) / (double)viewportLengthSamples * getWidth());
 
         if (endX - startX < 2.0f) {
             endX = startX + 2.0f;
