@@ -134,7 +134,7 @@ void WaveformOverview::setGenCallbacks()
 
 }
 
-bool WaveformOverview::openRptFile(const juce::String& filePath, double viewportZoomLevel, float viewportWidth, bool liveMode, int& out_numInChans)
+bool WaveformOverview::openRptFile(const juce::String& filePath, double viewportZoomLevel, float viewportWidth, bool liveMode)
 {
     m_liveMode = liveMode;
     disableRefBlocks = false;
@@ -149,8 +149,6 @@ bool WaveformOverview::openRptFile(const juce::String& filePath, double viewport
     setRptCallbacks();
 
     auto& header = m_rptFile->getHeader();
-
-    out_numInChans = header.in_channels;
 
     if (liveMode)
     {
@@ -167,7 +165,7 @@ bool WaveformOverview::openRptFile(const juce::String& filePath, double viewport
 
     m_mipmaps->clear();
     m_markers->clear();
-    m_diffDetector->clear();
+    m_diffDetector->startDetection(header.out_channels);
 
     m_mipmaps->init(header.in_channels, header.out_channels, liveMode, totalSamples);
 
@@ -278,9 +276,9 @@ void WaveformOverview::openGenFile(const juce::String& filePath)
 
     m_rptFile->seekToDataStart();
 
-    m_diffDetector->clear();
-
     auto& header = m_rptFile->getHeader();
+
+    m_diffDetector->startDetection(header.out_channels);
 
     m_genFile->seekToDataStart();
     m_genFile->initChanStates(false, header.in_channels, header.out_channels, header.block_size);
@@ -385,10 +383,12 @@ void WaveformOverview::updateRegenerateThread(DebugProcessor* processor)
 
     const int latencySamples = processor->getLatencySamples(header.block_size);
 
-    AudioRingBuffer* refOutChannelsCache[2] = { nullptr, nullptr };
-    for (int i = 0; i < 2; i++)
+    AudioRingBuffer** refOutChannelsCache = new AudioRingBuffer * [numOutChannels];
+    AudioRingBuffer** genOutChannelsCache = new AudioRingBuffer*[numOutChannels];
+    for (int i = 0; i < numOutChannels; i++)
     {
         refOutChannelsCache[i] = new AudioRingBuffer(header.block_size, header.block_size + latencySamples);
+        genOutChannelsCache[i] = new AudioRingBuffer(header.block_size, header.block_size + latencySamples);
     }
 
     m_genFile.reset(genFile);
@@ -404,16 +404,15 @@ void WaveformOverview::updateRegenerateThread(DebugProcessor* processor)
     bool rptFileEnded = false;
 
     int64_t samplesProcessed = 0;
-    int64_t consumedLatency = latencySamples;
 
-    m_diffDetector->clear();
+    m_diffDetector->startDetection(header.out_channels);
 
     m_genFile->seekToDataStart();
     m_genFile->initChanStates(false, header.in_channels, header.out_channels, header.block_size);
 
     m_mipmaps->clearRegenChannels();
 
-    pDebugger->setBlockAddedCallback([this](auto type, const auto* bytes, auto size)
+    pDebugger->setBlockAddedCallback([&](auto type, const auto* bytes, auto size)
     {
         ReadBlock tempBlock;
         tempBlock.type = static_cast<BlockType>(type);
@@ -426,6 +425,38 @@ void WaveformOverview::updateRegenerateThread(DebugProcessor* processor)
         if (tempBlock.type == BlockType::AUDIOOUT)
         {
             m_bLiveRefreshNeeded.store(true);
+
+            auto samples = tempBlock.as_samples((EBitDepth)header.bit_depth);
+            int remainingSamples = samples.size();
+            const int numberOfSamplesPerBlock = remainingSamples / (header.out_channels);
+            auto it = samples.begin();
+
+            assert(numberOfSamplesPerBlock <= header.block_size);
+
+            while (remainingSamples > 0)
+            {
+                assert(it != samples.end());
+
+                for (int iChan = 0; iChan < header.out_channels; iChan++)
+                {
+                    int32_t sampleInt = *it;
+                    float sample = AudioDebugger::intToFloat(sampleInt, header.bit_depth);
+
+                    genOutChannelsCache[iChan]->push(&sample, 1);
+
+                    it++;
+                    remainingSamples--;
+                }
+            }
+
+            for (int chan = 0; chan < numOutChannels; chan++)
+            {
+                const auto& originalBuffer = refOutChannelsCache[chan]->readToTemp(numberOfSamplesPerBlock, -latencySamples);
+                const auto& generatedBuffer = genOutChannelsCache[chan]->readToTemp(numberOfSamplesPerBlock, 0);
+                m_diffDetector->detectDifferences(originalBuffer, generatedBuffer, chan, header.bit_depth);
+            }
+
+            m_regenSamplesProcessed += numberOfSamplesPerBlock;
         }
     });
 
@@ -434,31 +465,12 @@ void WaveformOverview::updateRegenerateThread(DebugProcessor* processor)
 
     std::vector<RawMidiMessage> localMidiMessages;
 
-    bool bAudioInRead = false;
-    int numberOfSamplesPerBlock = 0;
-    bool bAudioOutRead = false;
-
-    auto generateAndDiff = [&]()
+    const int numberOfSamplesPerBlock = header.block_size;
+ 
+    auto processBuffer = [&]()
     {
         processor->processBlockHook(numberOfSamplesPerBlock, tempInPtrs.data(), localMidiMessages, outBuffer);
-
         samplesProcessed += numberOfSamplesPerBlock;
-
-        if (consumedLatency <= 0)
-        {
-            auto& regeneratedBuffer = outChannels;
-            for (int chan = 0; chan < numOutChannels; chan++)
-            {
-                const auto& originalBuffer = refOutChannelsCache[chan]->readToTemp(numberOfSamplesPerBlock, -latencySamples);
-                m_diffDetector->detectDifferences(originalBuffer, regeneratedBuffer[chan], chan, header.bit_depth);
-            }
-
-            m_regenSamplesProcessed += numberOfSamplesPerBlock;
-        }
-        else
-        {
-            consumedLatency -= numberOfSamplesPerBlock;
-        }
     };
 
     while (true)
@@ -466,11 +478,9 @@ void WaveformOverview::updateRegenerateThread(DebugProcessor* processor)
         BlockHeader nextHeader;
         if (m_rptFile->peekNextBlockHeader(nextHeader) && nextHeader.block_id != currentBlockId)
         {
-            generateAndDiff();
+            processBuffer();
 
             localMidiMessages.clear();
-            bAudioInRead = false;
-            bAudioOutRead = false;
             currentBlockId = nextHeader.block_id;
         }
 
@@ -478,13 +488,11 @@ void WaveformOverview::updateRegenerateThread(DebugProcessor* processor)
         if (m_rptFile->processOneBlock(block, EProcessType::DryRun, true, processedThisBlock) == EProcessRet::Stop)
         {
             rptFileEnded = true;
-            generateAndDiff();
+            processBuffer();
         }
 
         if (block.type == BlockType::AUDIOIN)
         {
-            bAudioInRead = true;
-            numberOfSamplesPerBlock = m_rptFile->as_samples(block).size() / numInChannels;
         }
         else if (block.type == BlockType::MIDI)
         {
@@ -492,8 +500,6 @@ void WaveformOverview::updateRegenerateThread(DebugProcessor* processor)
         }
         else if (block.type == BlockType::AUDIOOUT)
         {
-            bAudioOutRead = true;
-
             for (int i = 0; i < numOutChannels; i++)
             {
                 const auto& sourceBuff = m_rptFile->getOutTempBuffer()[i];
@@ -520,10 +526,13 @@ void WaveformOverview::updateRegenerateThread(DebugProcessor* processor)
 
     pDebugger->endRegenerate();
 
-    for (int i = 0; i < 2; i++)
+    for (int i = 0; i < numOutChannels; i++)
     {
         delete refOutChannelsCache[i];
+        delete genOutChannelsCache[i];
     }
+    delete[] refOutChannelsCache;
+    delete[] genOutChannelsCache;
 }
 
 void WaveformOverview::generateMipmapLevelsInBackground()

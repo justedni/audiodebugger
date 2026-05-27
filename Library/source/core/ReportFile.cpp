@@ -518,6 +518,9 @@ void ReportFile::findSamplesFromBlock(BlockType targetBlockType, int64_t startSa
 
     assert(targetBlockType == BlockType::AUDIOIN || targetBlockType == BlockType::AUDIOOUT);
     const std::vector<BlockEntry>& blocks = (targetBlockType == BlockType::AUDIOOUT) ? m_audioOutBlocks : m_audioInBlocks;
+    if (blocks.empty())
+        return;
+
     bool bFound = findOffsetForSample(blocks, startSample, out_fileOffset, out_blockStart);
     assert(bFound);
     if (bFound)

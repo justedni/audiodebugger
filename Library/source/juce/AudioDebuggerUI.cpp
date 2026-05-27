@@ -460,6 +460,7 @@ AudioDebuggerUI::AudioDebuggerUI(DebugProcessor* processor)
     addAndMakeVisible(zoomVSlider.get());
 
     m_numInputs = AudioDebugger::get()->getNumInputs();
+    m_numOutputs = AudioDebugger::get()->getNumOutputs();
     refreshChannelBounds();
 }
 
@@ -589,9 +590,9 @@ int64_t AudioDebuggerUI::getSampleAtPosition(int x) const
 
 void AudioDebuggerUI::refreshChannelBounds()
 {
-    static constexpr float bottomMargin = 20.0f;
-    static constexpr float gapBetweenStereoPairs = 30.0f;
-    static constexpr float topMargin = gapBetweenStereoPairs;
+    static constexpr float bottomMargin = 10.0f;
+    static constexpr float gapBetweenChannels = 30.0f;
+    static constexpr float topMargin = gapBetweenChannels;
 
     const int inputNumChannels = m_numInputs;
     const int outputNumChannels = m_numOutputs;
@@ -603,11 +604,10 @@ void AudioDebuggerUI::refreshChannelBounds()
     auto& bounds = m_chanBounds.bounds;
     bounds.resize(totalChannels);
 
-    int stereoPairs = totalChannels / 2;
-    const float totalGapHeight = (stereoPairs - 1) * gapBetweenStereoPairs;
+    const float totalGapHeight = totalChannels * gapBetweenChannels;
     const float availableHeight = totalHeight - totalGapHeight - topMargin - bottomMargin;
     m_chanBounds.channelHeight = availableHeight / totalChannels;
-    m_chanBounds.metadataHeight = gapBetweenStereoPairs;
+    m_chanBounds.metadataHeight = gapBetweenChannels;
 
     float currentY = topMargin;
 
@@ -615,12 +615,12 @@ void AudioDebuggerUI::refreshChannelBounds()
         bounds[i].minValue = currentY;
         bounds[i].maxValue = currentY + m_chanBounds.channelHeight;
         bounds[i].middle = bounds[i].minValue + m_chanBounds.channelHeight / 2.0f;
-        bounds[i].metaY = currentY - gapBetweenStereoPairs;
+        bounds[i].metaY = currentY - gapBetweenChannels;
 
         currentY += m_chanBounds.channelHeight;
 
-        if ((i % 2 == 1) && (i < totalChannels - 1)) {
-            currentY += gapBetweenStereoPairs;
+        if (i < totalChannels) {
+            currentY += gapBetweenChannels;
         }
     }
 }
@@ -885,11 +885,6 @@ void AudioDebuggerUI::timerCallback()
             }
         }
     }
-}
-
-void AudioDebuggerUI::onBufferLengthChanged()
-{
-    m_numInputs = 0;
 }
 
 void AudioDebuggerUI::mouseMove(const juce::MouseEvent& event)
@@ -1191,8 +1186,7 @@ bool AudioDebuggerUI::loadAudioFile(const juce::File& file, bool liveMode)
     diffDetector->setMaskPreset(diffMaskPreset);
     diffDetector->setThreshold(m_parentComponent->getDiffThreshold());
 
-    int outNumInChans = 0;
-    bool bRet = overview->openRptFile(file.getFullPathName(), zoomLevel, getWidth(), liveMode, outNumInChans);
+    bool bRet = overview->openRptFile(file.getFullPathName(), zoomLevel, getWidth(), liveMode);
 
     if (!bRet) {
         overview.reset();
@@ -1202,7 +1196,9 @@ bool AudioDebuggerUI::loadAudioFile(const juce::File& file, bool liveMode)
 
     setGenerationButtonsEnabled(true);
 
-    m_numInputs = outNumInChans;
+    auto& header = overview->getRptFile()->getHeader();
+    m_numInputs = header.in_channels;
+    m_numOutputs = header.out_channels;
 
     const int totalChannels = m_numInputs + m_numOutputs * 2;
     m_channels.reserve(totalChannels);

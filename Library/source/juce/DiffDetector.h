@@ -39,11 +39,11 @@ public:
         Count
     };
 
-    void clear();
     const std::vector<DifferenceRange>& getAll() const { return m_differences; }
     std::vector<DifferenceRange> getInRange(int64_t startSample, int64_t endSample) const;
 
-    void detectDifferences(const std::vector<float>& outSamples, const std::vector<float>& refSamples, int ch, uint8_t bitDepth);
+    void startDetection(int numChannels);
+    void detectDifferences(const std::vector<float>& leftSamples, const std::vector<float>& rightSamples, int ch, uint8_t bitDepth);
 
     void setMaskPreset(MaskPreset preset);
     MaskPreset getMaskPreset() const { return m_preset; }
@@ -59,10 +59,15 @@ private:
     std::vector<DifferenceRange> m_differences;
     mutable juce::CriticalSection m_lock;
 
-    bool m_inRange[2] = { false, false };
-    int64_t m_rangeStart[2] = { 0, 0 };
-    int32_t m_rangeMaxDiff[2] = { 0, 0 };
-    int64_t m_samplesProcessed[2] = { 0, 0 };
+    struct State
+    {
+        bool inRange = false;
+        int64_t rangeStart = 0;
+        int32_t rangeMaxDiff = 0;
+        int64_t samplesProcessed = 0;
+    };
+
+    std::vector<State> m_states;
 
     int m_threshold = 0;
 

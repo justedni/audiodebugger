@@ -7,63 +7,64 @@
 
 namespace AudioDebug {
 
-void DiffDetector::clear()
+void DiffDetector::startDetection(int numChannels)
 {
     juce::ScopedLock lock(m_lock);
     m_differences.clear();
 
-    m_inRange[0] = m_inRange[1] = false;
-    m_rangeStart[0] = m_rangeStart[1] = 0;
-    m_rangeMaxDiff[0] = m_rangeMaxDiff[1] = 0;
-    m_samplesProcessed[0] = m_samplesProcessed[1] = 0;
+    m_states.clear();
+    m_states.resize(numChannels);
 }
 
-void DiffDetector::detectDifferences(const std::vector<float>& outSamples, const std::vector<float>& refSamples, int ch, uint8_t bitDepth)
+void DiffDetector::detectDifferences(const std::vector<float>& leftSamples, const std::vector<float>& rightSamples, int ch, uint8_t bitDepth)
 {
-    jassert(outSamples.size() == refSamples.size());
+    jassert(leftSamples.size() == rightSamples.size());
 
-    const int samplesToRead = static_cast<int>(outSamples.size());
+    jassert(ch < m_states.size());
+    auto& state = m_states[ch];
+
+    const int samplesToRead = static_cast<int>(leftSamples.size());
     for (int i = 0; i < samplesToRead; ++i)
     {
         bool hasDifference = false;
         int32_t maxDiffAtSample = 0;
 
-        const int32_t mainSample = AudioDebugger::floatToInt(outSamples[i], bitDepth);
-        const int32_t refSample = AudioDebugger::floatToInt(refSamples[i], bitDepth);
-        const int32_t diff = diffValues(mainSample, refSample);
+        const int32_t leftSample = AudioDebugger::floatToInt(leftSamples[i], bitDepth);
+        const int32_t rightSample = AudioDebugger::floatToInt(rightSamples[i], bitDepth);
+        const int32_t diff = diffValues(leftSample, rightSample);
 
         if (diff > m_threshold) {
             hasDifference = true;
             maxDiffAtSample = diff;
         }
 
-        int64_t currentSample = m_samplesProcessed[ch] + i;
+        int64_t currentSample = state.samplesProcessed + i;
 
         if (hasDifference) {
-            if (!m_inRange[ch]) {
-                m_inRange[ch] = true;
-                m_rangeStart[ch] = currentSample;
-                m_rangeMaxDiff[ch] = maxDiffAtSample;
+            if (!state.inRange) {
+                state.inRange = true;
+                state.rangeStart = currentSample;
+                state.rangeMaxDiff = maxDiffAtSample;
             }
             else {
-                m_rangeMaxDiff[ch] = std::max(m_rangeMaxDiff[ch], maxDiffAtSample);
+                state.rangeMaxDiff = std::max(state.rangeMaxDiff, maxDiffAtSample);
             }
         }
         else {
-            if (m_inRange[ch]) {
+            if (state.inRange) {
                 juce::ScopedLock lock(m_lock);
-                m_differences.emplace_back(ch, m_rangeStart[ch], currentSample - 1, m_rangeMaxDiff[ch]);
-                m_inRange[ch] = false;
+                m_differences.emplace_back(ch, state.rangeStart, currentSample - 1, state.rangeMaxDiff);
+                state.inRange = false;
             }
         }
     }
 
-    m_samplesProcessed[ch] += samplesToRead;
+    state.samplesProcessed += samplesToRead;
 
-    if (m_inRange[ch]) {
-        int64_t lastSample = m_samplesProcessed[ch] - 1;
-        m_differences.emplace_back(ch, m_rangeStart[ch], lastSample, m_rangeMaxDiff[ch]);
-        m_inRange[ch] = false;
+    if (state.inRange) {
+        int64_t lastSample = state.samplesProcessed - 1;
+        m_differences.emplace_back(ch, state.rangeStart, lastSample, state.rangeMaxDiff);
+        state.inRange = false;
     }
 }
 

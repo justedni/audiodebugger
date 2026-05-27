@@ -71,6 +71,7 @@ public:
     virtual void setSliderFromDebugPanel(uint8_t id, float value) {}
     virtual void setButtonFromDebugPanel(uint8_t id, bool bEnabled) {}
     virtual void invalidateCustomCache_() {}
+    virtual void refreshChannelBounds();
     virtual juce::Colour getWaveformColour(uint8_t channelId) const;
     virtual juce::String getSampleValueString(float value, uint8_t bitDepth) const;
 
@@ -123,8 +124,6 @@ public:
 
     bool getOption(uint8_t id) const;
 
-    void onBufferLengthChanged();
-
     void setSliderValue(uint8_t id, float value);
     void setButtonEnabled(uint8_t id, bool bEnabled);
 
@@ -161,7 +160,7 @@ protected:
 
     DebugProcessor* m_processor = nullptr;
     uint8_t m_numInputs = 0;
-    const uint8_t m_numOutputs = 2;
+    uint8_t m_numOutputs = 2;
 
     std::unique_ptr<AudioDebuggerLookAndFeel> m_lookAndFeel;
     std::unique_ptr<juce::FileChooser> m_fileChooser;
@@ -208,7 +207,6 @@ protected:
 
     ChannelData m_chanBounds;
 
-    void refreshChannelBounds();
     int getChannelHeight() const;
 public:
     const ChannelData& getChannelData() const { return m_chanBounds; }

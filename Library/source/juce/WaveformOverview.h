@@ -43,7 +43,7 @@ public:
     void startOpenGenFile(const juce::String& genFilePath);
     void startOutputRegeneration(DebugProcessor* processor);
 
-    bool openRptFile(const juce::String& filePath, double viewportZoomLevel, float viewportWidth, bool liveMode, int& out_numInChans);
+    bool openRptFile(const juce::String& filePath, double viewportZoomLevel, float viewportWidth, bool liveMode);
     void openGenFile(const juce::String& filePath);
     void reopenSameGenFile();
 
