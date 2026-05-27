@@ -30,9 +30,10 @@ void JuceDebugProcessor::prepareToPlayHook(double sampleRate, int samplesPerBloc
 {
     prepareToPlay(sampleRate, samplesPerBlock);
 }
-void JuceDebugProcessor::processBlockHook(int numSamples, float** inputs, const std::vector<RawMidiMessage>& midiMessages, float** outputs)
+void JuceDebugProcessor::processBlockHook(int numSamples, float** inputs, const std::vector<RawMidiMessage>& midiMessages)
 {
-    juce::AudioBuffer<float> tempBuffer(inputs, getTotalNumInputChannels(), numSamples);
+    const int numInputs = AudioDebug::AudioDebugger::get()->getNumInputs();
+    juce::AudioBuffer<float> tempBuffer(inputs, numInputs, numSamples);
 
     juce::MidiBuffer juceMidiMessages;
     for (auto& msg : midiMessages)
@@ -41,14 +42,6 @@ void JuceDebugProcessor::processBlockHook(int numSamples, float** inputs, const 
     }
 
     processBlockRegenerate(tempBuffer, juceMidiMessages);
-
-    for (int i = 0; i < numSamples; i++)
-    {
-        for (int ch = 0; ch < getTotalNumOutputChannels(); ch++)
-        {
-            outputs[ch][i] = inputs[ch][i];
-        }
-    }
 }
 
 } // namespace AudioDebug

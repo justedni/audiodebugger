@@ -362,13 +362,6 @@ void WaveformOverview::updateRegenerateThread(DebugProcessor* processor)
     for (const auto& buff : tempIn)
         tempInPtrs.push_back(const_cast<float*>(buff.data()));
 
-    std::vector<std::vector<float>> outChannels (numOutChannels, std::vector<float>(header.block_size));
-    std::vector<float*> tempOutPtrs(numOutChannels);
-    for (size_t i = 0; i < numOutChannels; ++i)
-        tempOutPtrs[i] = outChannels[i].data();
-
-    float** outBuffer = tempOutPtrs.data();
-
     std::string genFileName;
     pDebugger->startRegenerate(header, genFileName);
 
@@ -469,7 +462,7 @@ void WaveformOverview::updateRegenerateThread(DebugProcessor* processor)
  
     auto processBuffer = [&]()
     {
-        processor->processBlockHook(numberOfSamplesPerBlock, tempInPtrs.data(), localMidiMessages, outBuffer);
+        processor->processBlockHook(numberOfSamplesPerBlock, tempInPtrs.data(), localMidiMessages);
         samplesProcessed += numberOfSamplesPerBlock;
     };
 

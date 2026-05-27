@@ -23,7 +23,7 @@ public:
 	void prepareToPlay(double sampleRate, int samplesPerBlock) override;
 
 	void prepareToPlayHook(double sampleRate, int samplesPerBlock) override;
-	void processBlockHook(int numSamples, float** inputs, const std::vector<RawMidiMessage>& midiMessages, float** outputs) override;
+	void processBlockHook(int numSamples, float** inputs, const std::vector<RawMidiMessage>& midiMessages) override;
 };
 
 } // namespace AudioDebug
