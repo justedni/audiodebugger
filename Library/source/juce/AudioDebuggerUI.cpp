@@ -207,10 +207,14 @@ public:
         addAndMakeVisible(m_audioDebugger);
         m_audioDebugger->setParentComponentPtr(this);
 
-        addAndMakeVisible(m_sampleIdLabel);
+        m_sampleRateLabel.setFont(juce::Font(14.0f, juce::Font::bold));
+        m_sampleRateLabel.setJustificationType(juce::Justification::centredLeft);
+        addAndMakeVisible(m_sampleRateLabel);
+
         m_sampleIdLabel.setFont(juce::Font(14.0f, juce::Font::bold));
         m_sampleIdLabel.setJustificationType(juce::Justification::centredLeft);
         m_sampleIdLabel.setText("Sample: ---", juce::dontSendNotification);
+        addAndMakeVisible(m_sampleIdLabel);
 
         zoomSlider.reset(new juce::Slider());
         zoomSlider->setRange(1.0, audioDebugger->getMaxZoom(), 0.0);
@@ -268,6 +272,10 @@ public:
         addAndMakeVisible(m_buttonDiffRefresh.get());
         m_buttonDiffRefresh->onClick = [this] { m_audioDebugger->refreshGenFile(); };
 
+        if (auto* overview = m_audioDebugger->getOverview())
+            if (auto* rptFile = overview->getRptFile())
+                updateSampleRateDisplay(rptFile->getHeader().sample_rate);
+
         setSize(600, 400);
     }
 
@@ -310,6 +318,7 @@ public:
         m_buttonDiffRefresh->setBounds(bottomBarBounds.removeFromLeft(70));
 
         m_sampleIdLabel.setBounds(bottomBarBounds.removeFromRight(120));
+        m_sampleRateLabel.setBounds(bottomBarBounds.removeFromRight(100));
 
         m_audioDebugger->setBounds(bounds);
     }
@@ -394,6 +403,11 @@ public:
         }
     }
 
+    void updateSampleRateDisplay(int32_t rate)
+    {
+        m_sampleRateLabel.setText(juce::String::formatted("Rate: %dkHz", (int32_t)std::round(rate / 1000)), juce::dontSendNotification);
+    }
+
     MainMenuModel* getMenuBarModel() const { return m_menuBarModel.get(); }
     AutoConnectButton* getAutoConnectButton() const { return m_autoConnectButton.get(); }
     juce::ScrollBar* getScrollbar() const { return m_scrollbar.get(); }
@@ -420,6 +434,7 @@ private:
     juce::Label m_zoomLabel;
     std::unique_ptr<juce::Slider> zoomSlider;
     juce::Label m_zoomText;
+    juce::Label m_sampleRateLabel;
     juce::Label m_sampleIdLabel;
 
     juce::Label m_diffThresholdLabel;
@@ -1212,6 +1227,8 @@ bool AudioDebuggerUI::loadAudioFile(const juce::File& file, bool liveMode)
 
     m_overlay = std::make_unique<OverlayComponent>(*this);
     addAndMakeVisible(m_overlay.get());
+
+    m_parentComponent->updateSampleRateDisplay(header.sample_rate);
 
     resized();
 
