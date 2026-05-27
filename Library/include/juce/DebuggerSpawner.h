@@ -15,11 +15,13 @@ class DebuggerSpawner : public juce::Component
 {
 public:
 	DebuggerSpawner(AudioDebug::DebugProcessor* processor, const juce::String& tracePrefix);
+	DebuggerSpawner(AudioDebug::AudioDebuggerUI* debugger, const juce::String& tracePrefix);
 	~DebuggerSpawner();
 
 	void resized() override;
 
 private:
+	void init(const juce::String& tracePrefix);
 	void openReport();
 
 	juce::TextButton m_buttonReport;

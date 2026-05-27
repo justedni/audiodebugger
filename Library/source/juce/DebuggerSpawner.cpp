@@ -9,21 +9,35 @@
 namespace AudioDebug {
 
 DebuggerSpawner::DebuggerSpawner(AudioDebug::DebugProcessor* processor, const juce::String& tracePrefix)
-	: m_buttonReport("Debugger")
+    : m_buttonReport("Debugger")
 {
-	addAndMakeVisible(m_buttonReport);
+    m_reportViewer.reset(new AudioDebug::AudioDebuggerUI(processor));
 
-    auto path = juce::File::getSpecialLocation(juce::File::tempDirectory).getChildFile(tracePrefix + ".rpt");
-    AudioDebug::AudioDebugger::get()->setCaptureName(path.getFullPathName().toStdString(), false);
+    init(tracePrefix);
+}
 
-	m_reportViewer.reset(new AudioDebug::AudioDebuggerUI(processor));
-	m_buttonReport.onClick = [this] { openReport(); };
+DebuggerSpawner::DebuggerSpawner(AudioDebug::AudioDebuggerUI* debugger, const juce::String& tracePrefix)
+    : m_buttonReport("Debugger")
+{
+    m_reportViewer.reset(debugger);
+
+    init(tracePrefix);
 }
 
 DebuggerSpawner::~DebuggerSpawner()
 {
 	if (m_reportWindow)
 		m_reportWindow.deleteAndZero();
+}
+
+void DebuggerSpawner::init(const juce::String& tracePrefix)
+{
+    addAndMakeVisible(m_buttonReport);
+
+    auto path = juce::File::getSpecialLocation(juce::File::tempDirectory).getChildFile(tracePrefix + ".rpt");
+    AudioDebug::AudioDebugger::get()->setCaptureName(path.getFullPathName().toStdString(), false);
+
+    m_buttonReport.onClick = [this] { openReport(); };
 }
 
 void DebuggerSpawner::resized()
