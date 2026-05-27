@@ -2,6 +2,9 @@
 
 WIP tool to debug audio plugins, with trace recording, output regeneration, close sample inspection, customizable interface and functionalities
 
+## Compile and link
+Please take a look at the CMakeLists.txt examples in the code. The library expects to find a "JUCE" folder at the root (next to the audiodebugger folder) that contains the Juce framework. Then in the CMakeLists, simply link with `AudioDebuggerLib` using `target_link_libraries`.
+
 ## Integration - Juce plugin (fast)
 Integration example can be found in the [SamplePlugin](https://github.com/justedni/audiodebugger/tree/main/SamplePlugin) subfolder
 
