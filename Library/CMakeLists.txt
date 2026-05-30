@@ -15,10 +15,13 @@ set(JUCE_INTERFACE
 set(CORE_SOURCE
     source/core/AudioDebug.cpp
     source/core/DebugProcessor.cpp
+    source/core/DiffDetector.cpp
+    source/core/DiffDetector.h
     source/core/FileWriter.cpp
     source/core/FileWriter.h
     source/core/ReportFile.cpp
     source/core/ReportFile.h
+    source/core/RingBuffer.h
 )
 
 set(JUCE_SOURCE
@@ -29,8 +32,6 @@ set(JUCE_SOURCE
     source/juce/ControlPanel.h
     source/juce/CustomSlider.cpp
     source/juce/DebuggerSpawner.cpp
-    source/juce/DiffDetector.cpp
-    source/juce/DiffDetector.h
     source/juce/JuceDebugProcessor.cpp
     source/juce/MarkerStore.cpp
     source/juce/MarkerStore.h
@@ -42,7 +43,6 @@ set(JUCE_SOURCE
     source/juce/OptionPanel.h
     source/juce/OverlayComponent.cpp
     source/juce/OverlayComponent.h
-    source/juce/RingBuffer.h
     source/juce/WaveformOverview.cpp
     source/juce/WaveformOverview.h
 )

@@ -5,11 +5,13 @@
 
 #include "core/AudioDebug.h"
 
+#include <assert.h>
+
 namespace AudioDebug {
 
 void DiffDetector::startDetection(int numChannels)
 {
-    juce::ScopedLock lock(m_lock);
+    std::lock_guard<std::mutex> lock(m_mutex);
     m_differences.clear();
 
     m_states.clear();
@@ -18,9 +20,9 @@ void DiffDetector::startDetection(int numChannels)
 
 void DiffDetector::detectDifferences(const std::vector<float>& leftSamples, const std::vector<float>& rightSamples, int ch, uint8_t bitDepth)
 {
-    jassert(leftSamples.size() == rightSamples.size());
+    assert(leftSamples.size() == rightSamples.size());
 
-    jassert(ch < m_states.size());
+    assert(ch < m_states.size());
     auto& state = m_states[ch];
 
     const int samplesToRead = static_cast<int>(leftSamples.size());
@@ -52,7 +54,7 @@ void DiffDetector::detectDifferences(const std::vector<float>& leftSamples, cons
         }
         else {
             if (state.inRange) {
-                juce::ScopedLock lock(m_lock);
+                std::lock_guard<std::mutex> lock(m_mutex);
                 m_differences.emplace_back(ch, state.rangeStart, currentSample - 1, state.rangeMaxDiff);
                 state.inRange = false;
             }
@@ -93,7 +95,7 @@ uint32_t DiffDetector::maskForPreset(MaskPreset preset)
 
 std::vector<DifferenceRange> DiffDetector::getInRange(int64_t startSample, int64_t endSample) const
 {
-    juce::ScopedLock lock(m_lock);
+    std::lock_guard<std::mutex> lock(m_mutex);
 
     std::vector<DifferenceRange> result;
 

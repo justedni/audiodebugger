@@ -3,9 +3,8 @@
 
 #pragma once
 
-#include <juce_gui_basics/juce_gui_basics.h>
-
 #include <vector>
+#include <mutex>
 
 namespace AudioDebug {
 
@@ -57,7 +56,7 @@ private:
     uint32_t maskForPreset(MaskPreset preset);
 
     std::vector<DifferenceRange> m_differences;
-    mutable juce::CriticalSection m_lock;
+    mutable std::mutex m_mutex;
 
     struct State
     {

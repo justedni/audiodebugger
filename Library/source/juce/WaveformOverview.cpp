@@ -7,9 +7,9 @@
 #include "core/DebugProcessor.h"
 #include "core/FileWriter.h"
 #include "juce/Mipmaps.h"
-#include "juce/RingBuffer.h"
+#include "core/RingBuffer.h"
 
-#include "juce/DiffDetector.h"
+#include "core/DiffDetector.h"
 #include "juce/MarkerStore.h"
 #include "juce/MipmapBuilder.h"
 

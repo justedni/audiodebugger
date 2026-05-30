@@ -6,7 +6,7 @@
 #include "juce/AudioDebuggerUI.h"
 #include "juce/WaveformOverview.h"
 
-#include "juce/DiffDetector.h"
+#include "core/DiffDetector.h"
 #include "juce/MarkerStore.h"
 
 #include <juce_audio_basics/juce_audio_basics.h>

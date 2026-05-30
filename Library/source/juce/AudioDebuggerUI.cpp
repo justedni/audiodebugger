@@ -9,7 +9,7 @@
 
 #include "juce/CustomSlider.h"
 #include "juce/ControlPanel.h"
-#include "juce/DiffDetector.h"
+#include "core/DiffDetector.h"
 #include "juce/MarkerStore.h"
 #include "juce/MipmapBuilder.h"
 #include "juce/Mipmaps.h"
@@ -486,6 +486,8 @@ AudioDebuggerUI::~AudioDebuggerUI()
 
 void AudioDebuggerUI::initialize()
 {
+    AudioDebugger::create();
+
     auto* menuBarModel = m_parentComponent->getMenuBarModel();
     setAutoWriteRptFile(m_parentComponent->getAutoWriteRptFile());
     setRptFileMaxLength(m_parentComponent->getRptFileMaxLength());
