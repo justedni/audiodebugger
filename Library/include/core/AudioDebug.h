@@ -161,6 +161,7 @@ public:
 
 protected:
     friend class DebugProcessor;
+    friend class AudioDebuggerUI;
     static void create();
     static void release();
 
