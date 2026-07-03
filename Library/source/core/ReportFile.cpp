@@ -122,7 +122,17 @@ bool ReportFile::openFile(bool liveMode)
         return false;
     }
 
+    fixLegacyBitDepth();
+
     return true;
+}
+
+void ReportFile::fixLegacyBitDepth()
+{
+    if (m_header.bit_depth >= (int)EBitDepth::Count)
+    {
+        m_header.bit_depth = EBitDepth::Int24;
+    }
 }
 
 int64_t ReportFile::getFileOffset()

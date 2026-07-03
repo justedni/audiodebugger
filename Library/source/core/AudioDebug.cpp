@@ -12,6 +12,12 @@
 
 #include "core/DebugProcessor.h"
 
+#ifdef _DEBUG
+#define ensure(cond) if (!(cond)) { __debugbreak(); }
+#else
+#define ensure(cond) assert(cond)
+#endif
+
 namespace AudioDebug {
 
 std::unique_ptr<AudioDebugger> AudioDebugger::m_singleton;
@@ -47,6 +53,8 @@ void SampleWriter::push(int32_t sample) noexcept
 		m_dest[m_pos++] = static_cast<uint8_t>((sample >> 24) & 0xFF);
 		break;
 	}
+	default:
+		ensure(false);
 	}
 }
 
@@ -67,7 +75,7 @@ int32_t AudioDebugger::floatToInt(float sample, uint8_t bitDepth)
 	}
 	}
 
-	assert(false);
+	ensure(false);
 	return 0;
 }
 
@@ -85,7 +93,7 @@ float AudioDebugger::intToFloat(int32_t sample, uint8_t bitDepth)
 	}
 	}
 
-	assert(false);
+	ensure(false);
 	return 0;
 }
 
@@ -225,7 +233,7 @@ void AudioDebugger::prepare(DebugProcessor* processor)
 
 			if (!m_debugWriter->start())
 			{
-				assert(false);
+				ensure(false);
 				m_debugWriter.reset(nullptr);
 			}
 		}
@@ -276,7 +284,7 @@ void AudioDebugger::pushMidiEvent(int position, int dataSize, const uint8_t* dat
 {
 	if (midiBufferSize + 4 + 1 + dataSize > kMidiBufferSize)
 	{
-		assert(false); // queue full
+		ensure(false); // queue full
 		return;
 	}
 
@@ -450,7 +458,7 @@ void AudioDebugger::startRegenerate(const FileHeader& header, std::string& out_g
 
 	if (!m_debugWriter->start())
 	{
-		assert(false);
+		ensure(false);
 		m_debugWriter.reset(nullptr);
 	}
 }
@@ -550,7 +558,7 @@ void Metadata::addMarkerRegular(std::vector<uint8_t>& meta_data, int magic, int 
 		Metadata::add_string(meta_data, text, textSize);
 		break;
 	default:
-		assert(false); // Unhandled
+		ensure(false); // Unhandled
 	}
 }
 
@@ -579,7 +587,7 @@ Marker Metadata::readMarker(const uint8_t* data, uint32_t& out_readSize)
 
 	if (!isValidMarker(magic_val))
 	{
-		assert(false);
+		ensure(false);
 		return Marker{};
 	}
 
@@ -620,7 +628,7 @@ Marker Metadata::readMarker(const uint8_t* data, uint32_t& out_readSize)
 		break;
 	}
 	default:
-		assert(false); // Unhandled
+		ensure(false); // Unhandled
 		return Marker{};
 	}
 }

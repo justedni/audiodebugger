@@ -170,6 +170,8 @@ public:
     MidiCallback onMidi;
 
 private:
+    void fixLegacyBitDepth();
+
     const EFileSlot m_slot;
     const std::string m_filePath;
     std::ifstream m_file;

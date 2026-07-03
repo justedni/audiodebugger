@@ -68,9 +68,10 @@ struct Marker
 enum EBitDepth : uint8_t
 {
     Int24,
-    Int32
+    Int32,
     //Int8,  // TODO
     //Int16, // TODO
+    Count
 };
 
 struct RawMidiMessage
