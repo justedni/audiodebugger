@@ -38,12 +38,12 @@ public:
 
     int getNumPrograms() override { return 1; }
     int getCurrentProgram() override { return 0; }
-    void setCurrentProgram (int index) override {}
-    const juce::String getProgramName(int index) override { return juce::String(""); }
-    void changeProgramName(int index, const juce::String& newName) override {}
+    void setCurrentProgram ([[maybe_unused]] int index) override {}
+    const juce::String getProgramName([[maybe_unused]] int index) override { return juce::String(""); }
+    void changeProgramName([[maybe_unused]] int index, [[maybe_unused]] const juce::String& newName) override {}
 
-    void getStateInformation(juce::MemoryBlock& destData) override {}
-    void setStateInformation(const void* data, int sizeInBytes) override {}
+    void getStateInformation([[maybe_unused]] juce::MemoryBlock& destData) override {}
+    void setStateInformation([[maybe_unused]] const void* data, [[maybe_unused]] int sizeInBytes) override {}
 
 private:
     void processInternal(int numSamples, juce::MidiBuffer& midiMessages, float* const* data);

@@ -26,7 +26,7 @@ struct MipmapLevel
     const int samplesPerPoint;
     std::atomic<int> numPointsReady = 0;
 
-    MipmapLevel(int inSamplesPerPoint, int totalSamples);
+    MipmapLevel(int inSamplesPerPoint, int64_t totalSamples);
     ~MipmapLevel();
 
     MipmapLevel(MipmapLevel&& other) noexcept;

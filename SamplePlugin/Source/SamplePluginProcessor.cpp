@@ -34,22 +34,27 @@ void SamplePluginProcessor::processBlock(juce::AudioBuffer<float> &buffer, juce:
 
     for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
     {
-        buffer.clear(i, 0, buffer.getNumSamples());
+        buffer.clear(i, 0, numSamples);
     }
 
-    auto* playHead = getPlayHead();
-    juce::AudioPlayHead::CurrentPositionInfo info;
-    playHead->getCurrentPosition(info);
-
-    // Useful toggle for MIDI synths to only send data when DAW is playing
-    if (m_isPlaying != info.isPlaying)
+    if (auto* procPlayHead = getPlayHead())
     {
-        auto* pDebugger = AudioDebug::AudioDebugger::get();
-        if (info.isPlaying && pDebugger) {
-            pDebugger->prepare(this);
-        }
+        auto pos = procPlayHead->getPosition();
+        if (pos.hasValue())
+        {
+            auto isPlaying = pos->getIsPlaying();
 
-        m_isPlaying = info.isPlaying;
+            // Useful toggle for MIDI synths to only send data when DAW is playing
+            if (m_isPlaying != isPlaying)
+            {
+                auto* pDebugger = AudioDebug::AudioDebugger::get();
+                if (isPlaying && pDebugger) {
+                    pDebugger->prepare(this);
+                }
+
+                m_isPlaying = isPlaying;
+            }
+        }
     }
 
     processInternal(buffer.getNumSamples(), midiMessages, data);

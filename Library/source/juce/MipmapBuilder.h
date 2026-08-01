@@ -38,7 +38,7 @@ private:
 
     struct Channel
     {
-        Channel(const std::vector<int>& samplesPerPoint, int totalSamples)
+        Channel(const std::vector<int>& samplesPerPoint, int64_t totalSamples)
         {
             int numLevels = samplesPerPoint.size();
             levels.reserve(numLevels);

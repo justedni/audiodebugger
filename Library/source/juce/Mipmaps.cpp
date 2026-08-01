@@ -3,6 +3,7 @@
 
 #include "Mipmaps.h"
 
+#include <cmath>
 #include <assert.h>
 
 namespace AudioDebug {
@@ -39,12 +40,12 @@ std::vector<int> MipmapLevel::getMipmapLevelsForMode(bool liveMode, int64_t tota
     return levels;
 }
 
-MipmapLevel::MipmapLevel(int inSamplesPerPoint, int totalSamples)
+MipmapLevel::MipmapLevel(int inSamplesPerPoint, int64_t totalSamples)
     : samplesPerPoint(inSamplesPerPoint)
     , numPointsReady(0)
     , state()
 {
-    int numPoints = (int)((totalSamples + inSamplesPerPoint - 1) / inSamplesPerPoint);
+    int numPoints = std::round((totalSamples + inSamplesPerPoint - 1) / inSamplesPerPoint);
 
     data.reserve(numPoints);
 }

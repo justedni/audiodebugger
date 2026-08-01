@@ -13,10 +13,10 @@ struct DifferenceRange
     uint8_t channel;
     int64_t startSample;
     int64_t endSample;
-    float maxDifference;
+    int32_t maxDifference;
 
-    DifferenceRange() : channel(0), startSample(0), endSample(0), maxDifference(0.0f) {}
-    DifferenceRange(uint8_t chan, int64_t start, int64_t end, float maxDiff)
+    DifferenceRange() : channel(0), startSample(0), endSample(0), maxDifference(0) {}
+    DifferenceRange(uint8_t chan, int64_t start, int64_t end, int32_t maxDiff)
         : channel(chan), startSample(start), endSample(end), maxDifference(maxDiff) {}
 
     bool operator<(const DifferenceRange& other) const {
