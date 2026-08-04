@@ -145,6 +145,7 @@ public:
     double getVerticalZoom() const { return zoomVSlider->getValue(); }
     double getSamplesPerPixel() const { return viewportLengthSamples / (double)getWidth(); }
     const std::vector<float>* getCachedSamplesForChannel(int chanId) const;
+    uint8_t getBitDepth() const { return sampleCache.bitDepth; }
     int64_t getCacheStartSample() const { return sampleCache.startSample; }
     juce::CriticalSection& getCacheLock() const { return cacheLock; }
     uint8_t getNumInputs() const { return m_numInputs; }
@@ -215,6 +216,7 @@ public:
     {
         int64_t startSample;
         int64_t numSamples;
+        uint8_t bitDepth = 0;
         std::vector<std::vector<float>> samples; // Per-channel
 
         bool contains(int64_t sample) const {

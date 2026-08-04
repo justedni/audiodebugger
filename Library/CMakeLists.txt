@@ -4,7 +4,10 @@ project(AudioDebuggerLib VERSION 1.0.0)
 
 set(CORE_INTERFACE
     include/core/AudioDebug.h
+    include/core/BlockWriter.h
     include/core/DebugProcessor.h
+    include/core/RptFileFormat.h
+    include/core/SampleWriter.h
 )
 
 set(JUCE_INTERFACE
@@ -14,6 +17,7 @@ set(JUCE_INTERFACE
 
 set(CORE_SOURCE
     source/core/AudioDebug.cpp
+    source/core/BlockWriter.cpp
     source/core/DebugProcessor.cpp
     source/core/DiffDetector.cpp
     source/core/DiffDetector.h

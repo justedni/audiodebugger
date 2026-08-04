@@ -19,6 +19,7 @@
 namespace AudioDebug {
 
 class AudioBlockQueue;
+class BlockWriter;
 
 class FileWriter {
 public:
@@ -28,9 +29,9 @@ public:
     bool start();
     void stop();
 
-    void writeAudioBlockDirect(BlockType type, uint32_t blockId, int numSamples, const std::function<void(SampleWriter&)>& f);
-
-    void writeBlock(BlockType type, uint32_t blockId, const std::vector<uint8_t>& data);
+    BlockWriter beginBlock(BlockType type, uint32_t blockId) noexcept;
+    bool writeAudioBlockDirect(BlockType type, uint32_t blockId, int numSamples, const std::function<void(SampleWriter&)>& f);
+    bool writeBlock(BlockType type, uint32_t blockId, const std::vector<uint8_t>& data);
 
     bool hasPendingWrites() const;
     FileHeader getCurrentHeader() const { return m_fileHeader; }
@@ -38,21 +39,34 @@ public:
 
     using BlockAddedFunc = std::function<void(uint32_t, const uint8_t*, size_t)>;
     void setBlockAddedCallback(BlockAddedFunc func) { m_blockAddedCallback = func; }
+
+protected:
+    friend class BlockWriter;
+    bool finishBlock(bool committed, size_t size) noexcept;
+    void abandonBlock() noexcept;
+
 private:
     void drainRemaining();
 
     void writerLoop();
     void writeBlockToFile(const struct WriteBlock& block);
+    void updateBlockCountInFile();
 
     std::string m_filename;
     FileHeader m_fileHeader;
+    size_t m_maxBlockBytes = 0;
+
     std::ofstream m_file;
 
     std::thread m_writerThread;
     std::unique_ptr<AudioBlockQueue> m_queue;
     std::atomic<bool> m_running;
 
+    struct WriteBlock* m_openSlot = nullptr;
+
     std::atomic<uint32_t> m_writtenAudioBlocksCount = 0;
+    uint32_t m_lastWrittenBlockCount = 0;
+    bool m_pendingFlush = false;
 
     BlockAddedFunc m_blockAddedCallback;
 };

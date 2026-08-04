@@ -7,11 +7,14 @@
 #include <functional>
 #include <variant>
 
+#include "core/BlockWriter.h"
+
 namespace AudioDebug {
 
 class FileWriter;
 class DebugProcessor;
 struct FileHeader;
+enum class BlockType : uint32_t;
 
 enum EMarkerColor : uint8_t
 {
@@ -81,23 +84,6 @@ struct RawMidiMessage
     uint8_t data[3] = { 0, 0, 0 };
 };
 
-class SampleWriter
-{
-public:
-    SampleWriter(uint8_t* dest, size_t maxBytes, uint8_t bitDepth) noexcept;
-
-    void push(int32_t sample) noexcept;
-    void push(float sample) noexcept;
-
-    size_t bytesWritten() const noexcept { return m_pos; }
-
-private:
-    uint8_t* m_dest;
-    size_t m_pos;
-    size_t m_maxBytes;
-    uint8_t m_bitDepth;
-};
-
 class AudioDebugger
 {
 public:
@@ -132,17 +118,13 @@ public:
 
     void pushAllInputSamples(int numSamples, int numChannels, float* const* buffer);
     void pushAllOutputSamples(int numSamples, int numChannels, float* const* buffer);
-    void addInDebugSamples(int numSamples, const SampleAccFunc f);
-    void addOutDebugSamples(int numSamples, const SampleAccFunc& f);
-    void addMetadata(const std::vector<uint8_t>& meta_data);
-    void addCustomData(const std::vector<uint8_t>& meta_data);
-    void pushMidiEvent(int position, int dataSize, const uint8_t* data);
-    void writeAllMidiEvents();
-    void sendBlockEnd();
+    void pushInDebugSamples(int numSamples, const SampleAccFunc f);
+    void pushOutDebugSamples(int numSamples, const SampleAccFunc& f);
+    BlockWriter& midiEventBlock() noexcept { return m_midiAccum.get(); }
+    BlockWriter& metadataBlock() noexcept { return m_metadataAccum.get(); }
+    BlockWriter& customBlock()   noexcept { return m_customAccum.get(); }
 
-    static std::vector<RawMidiMessage> readAllMidiEvents(const std::vector<uint8_t>& data);
-
-    int32_t getCurrentWrittenBufferSize() const;
+    int32_t getCurrentBufferTimestamp() const;
     int32_t getSampleIdInCurrentBuffer(int numSamples, int sampleId, bool lookback, int latencySamples) const;
     void setSampleToDebug(int32_t sampleId) { m_sampleToDebug = sampleId; }
 
@@ -163,12 +145,18 @@ public:
 protected:
     friend class DebugProcessor;
     friend class AudioDebuggerUI;
+    friend class ScopedDebugBlock;
     static void create();
     static void release();
 
 private:
+    void flushAccumulator_(BlockAccumulator& accum);
     void resetWriter_();
     void checkMaxLengthReached_();
+    void waitUntilWriterHasFinished_();
+    void serviceFromMessageThread();
+
+    void sendBlockEnd();
 
     static std::unique_ptr<AudioDebugger> m_singleton;
     static std::mutex m_mutex;
@@ -179,9 +167,11 @@ private:
     std::mutex m_writerMutex;
     std::unique_ptr<FileWriter> m_debugWriter;
 
-    static constexpr int kMidiBufferSize = 512 * 8;
-    uint8_t midiBuffer[kMidiBufferSize];
-    int midiBufferSize = 0;
+    std::atomic<bool> m_maxLengthReached{ false };
+
+    BlockAccumulator m_midiAccum;
+    BlockAccumulator m_metadataAccum;
+    BlockAccumulator m_customAccum;
 
     std::string m_debugFilepath;
     bool m_debugWriterStatusChanged = false;
@@ -199,10 +189,62 @@ private:
     int32_t m_maxSamplesPerBlock = 0;
 };
 
-
-class Metadata
+class ScopedDebugBlock
 {
 public:
+    ScopedDebugBlock();
+    ~ScopedDebugBlock();
+
+    ScopedDebugBlock(const ScopedDebugBlock&)            = delete;
+    ScopedDebugBlock& operator=(const ScopedDebugBlock&) = delete;
+    ScopedDebugBlock(ScopedDebugBlock&&)                 = delete;
+    ScopedDebugBlock& operator=(ScopedDebugBlock&&)      = delete;
+
+    explicit operator bool() const noexcept { return m_debugger != nullptr; }
+
+    void pushAllInputSamples(int numSamples, int numChannels, float* const* buffer)
+    {
+        if (m_debugger)
+            m_debugger->pushAllInputSamples(numSamples, numChannels, buffer);
+    }
+
+    void pushAllOutputSamples(int numSamples, int numChannels, float* const* buffer)
+    {
+        if (m_debugger)
+            m_debugger->pushAllOutputSamples(numSamples, numChannels, buffer);
+    }
+
+    void addInDebugSamples(int numSamples, const AudioDebugger::SampleAccFunc& f)
+    {
+        if (m_debugger)
+            m_debugger->pushInDebugSamples(numSamples, f);
+    }
+
+    void addOutDebugSamples(int numSamples, const AudioDebugger::SampleAccFunc& f)
+    {
+        if (m_debugger)
+            m_debugger->pushOutDebugSamples(numSamples, f);
+    }
+
+    void pushMidiEvent(int position, int dataSize, const uint8_t* data);
+
+    BlockWriter& metadata() noexcept
+    {
+        return m_debugger ? m_debugger->metadataBlock() : m_nullBlock;
+    }
+
+    BlockWriter& custom() noexcept
+    {
+        return m_debugger ? m_debugger->customBlock() : m_nullBlock;
+    }
+
+private:
+    AudioDebugger* m_debugger = nullptr;
+    BlockWriter m_nullBlock;
+};
+
+namespace Metadata {
+
     enum EMetadataType : uint32_t
     {
         INVALID = 0,
@@ -211,42 +253,45 @@ public:
         MARKER_CUSTOM = 0x434b524d,         // "MRKC"
     };
 
-    static bool isValidMarker(int magic)
+    constexpr bool isValidMarker(int magic)
     {
         return (magic == MARKER_BUFFER_START)
             || (magic == MARKER_TEXT)
             || (magic == MARKER_CUSTOM);
     }
 
-    static uint32_t add_uint8(std::vector<uint8_t>& buffer, uint8_t num);
-    static uint32_t add_int8(std::vector<uint8_t>& buffer, int8_t num);
-    static uint32_t add_uint16(std::vector<uint8_t>& buffer, uint16_t num);
-    static uint32_t add_int16(std::vector<uint8_t>& buffer, int16_t num);
-    static uint32_t add_uint32(std::vector<uint8_t>& buffer, uint32_t num);
-    static uint32_t add_uint64(std::vector<uint8_t>& buffer, uint64_t num);
-    static uint32_t add_int32(std::vector<uint8_t>& buffer, int32_t num);
-    static uint32_t add_float(std::vector<uint8_t>& buffer, float num);
-    static uint32_t add_double(std::vector<uint8_t>& buffer, double num);
-    static uint32_t add_string(std::vector<uint8_t>& buffer, const char* text, size_t textSize);
+    uint32_t add_uint8(BlockWriter& block, uint8_t num);
+    uint32_t add_int8(BlockWriter& block, int8_t num);
+    uint32_t add_uint16(BlockWriter& block, uint16_t num);
+    uint32_t add_int16(BlockWriter& block, int16_t num);
+    uint32_t add_uint32(BlockWriter& block, uint32_t num);
+    uint32_t add_uint64(BlockWriter& block, uint64_t num);
+    uint32_t add_int32(BlockWriter& block, int32_t num);
+    uint32_t add_float(BlockWriter& block, float num);
+    uint32_t add_double(BlockWriter& block, double num);
+    uint32_t add_string(BlockWriter& block, const char* text, size_t textSize);
 
-    static uint32_t read_uint8(const uint8_t* data, uint8_t& out_num);
-    static uint32_t read_int8(const uint8_t* data, int8_t& out_num);
-    static uint32_t read_uint16(const uint8_t* data, uint16_t& out_num);
-    static uint32_t read_int16(const uint8_t* data, int16_t& out_num);
-    static uint32_t read_uint32(const uint8_t* data, uint32_t& out_num);
-    static uint32_t read_uint64(const uint8_t* data, uint64_t& out_num);
-    static uint32_t read_int32(const uint8_t* data, int32_t& out_num);
-    static uint32_t read_float(const uint8_t* data, float& out_num);
-    static uint32_t read_double(const uint8_t* data, double& out_num);
+    void addMarkerText(BlockWriter& block, int timestamp, int8_t chanId, uint8_t paintType, uint8_t color, const char* text, size_t textSize);
+    void addMarkerCustom(BlockWriter& block, int timestamp, int8_t chanId, uint8_t paintType, uint8_t color, const std::vector<uint8_t>& data);
+    void addMarkerCustomHeaderOnly(BlockWriter& block, int timestamp, int8_t chanId, uint8_t paintType, uint8_t color);
+    void addBufferStartMarker(BlockWriter& block, int timestamp);
+    void addMarkerRegular(BlockWriter& block, int magic, int timestamp, int8_t chanId, uint8_t paintType, uint8_t color, const char* text, size_t textSize);
+    void addMidiEvent(BlockWriter& block, int timestamp, int dataSize, const uint8_t* data);
 
-    static void addMarkerText(std::vector<uint8_t>& meta_data, int timestamp, int8_t chanId, uint8_t paintType, uint8_t color, const char* text, size_t textSize);
-    static void addMarkerCustom(std::vector<uint8_t>& meta_data, int timestamp, int8_t chanId, uint8_t paintType, uint8_t color, const std::vector<uint8_t>& data);
-    static void addBufferStartMarker(std::vector<uint8_t>& meta_data, int timestamp);
 
-    static Marker readMarker(const uint8_t* data, uint32_t& out_readSize);
+    uint32_t read_uint8(const uint8_t* data, uint8_t& out_num);
+    uint32_t read_int8(const uint8_t* data, int8_t& out_num);
+    uint32_t read_uint16(const uint8_t* data, uint16_t& out_num);
+    uint32_t read_int16(const uint8_t* data, int16_t& out_num);
+    uint32_t read_uint32(const uint8_t* data, uint32_t& out_num);
+    uint32_t read_uint64(const uint8_t* data, uint64_t& out_num);
+    uint32_t read_int32(const uint8_t* data, int32_t& out_num);
+    uint32_t read_float(const uint8_t* data, float& out_num);
+    uint32_t read_double(const uint8_t* data, double& out_num);
 
-private:
-    static void addMarkerRegular(std::vector<uint8_t>& meta_data, int magic, int timestamp, int8_t chanId, uint8_t paintType, uint8_t color, const char* text, size_t textSize);
-};
+    Marker readMarker(const uint8_t* data, uint32_t& out_readSize);
+    std::vector<RawMidiMessage> readAllMidiEvents(const std::vector<uint8_t>& data);
+
+} // namespace Metadata
 
 } // namespace AudioDebug

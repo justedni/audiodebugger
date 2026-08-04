@@ -489,7 +489,7 @@ void WaveformOverview::updateRegenerateThread(DebugProcessor* processor)
         }
         else if (block.type == BlockType::MIDI)
         {
-            localMidiMessages = AudioDebugger::readAllMidiEvents(block.data);
+            localMidiMessages = Metadata::readAllMidiEvents(block.data);
         }
         else if (block.type == BlockType::AUDIOOUT)
         {

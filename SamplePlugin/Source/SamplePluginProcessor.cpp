@@ -6,18 +6,22 @@
 
 #include "core/AudioDebug.h"
 
+#include <BinaryData.h>
+
 SamplePluginProcessor::SamplePluginProcessor()
     : AudioDebug::JuceDebugProcessor(BusesProperties()
         .withInput("Input", juce::AudioChannelSet::stereo(), true)
         .withOutput("Output", juce::AudioChannelSet::stereo(), true))
 {
+    m_formatManager.registerBasicFormats();
+    m_synth.addVoice(new juce::SamplerVoice());
 }
 
 SamplePluginProcessor::~SamplePluginProcessor()
 {
 }
 
-bool SamplePluginProcessor::isBusesLayoutSupported(const BusesLayout &layouts) const
+bool SamplePluginProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const
 {
     if (layouts.getMainOutputChannelSet() != juce::AudioChannelSet::stereo())
         return false;
@@ -25,79 +29,57 @@ bool SamplePluginProcessor::isBusesLayoutSupported(const BusesLayout &layouts) c
     return true;
 }
 
-void SamplePluginProcessor::processBlock(juce::AudioBuffer<float> &buffer, juce::MidiBuffer &midiMessages)
+void SamplePluginProcessor::prepareToPlayImpl(double sampleRate, int samplesPerBlock)
 {
-    const auto totalNumInputChannels = getTotalNumInputChannels();
-    const auto totalNumOutputChannels = getTotalNumOutputChannels();
-    const int numSamples = buffer.getNumSamples();
-    float* const* data = buffer.getArrayOfWritePointers();
+    (void)samplesPerBlock;
 
-    for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
+    m_synth.setCurrentPlaybackSampleRate(sampleRate);
+    m_synth.clearSounds();
+
+    auto stream = std::make_unique<juce::MemoryInputStream>(BinaryData::StStrings_64_wav,
+        static_cast<size_t>(BinaryData::StStrings_64_wavSize),
+        false);
+
+    std::unique_ptr<juce::AudioFormatReader> reader(m_formatManager.createReaderFor(std::move(stream)));
+
+    if (reader == nullptr)
     {
-        buffer.clear(i, 0, numSamples);
+        jassertfalse;
+        return;
     }
 
-    if (auto* procPlayHead = getPlayHead())
+    juce::BigInteger allNotes;
+    allNotes.setRange(0, 128, true);
+
+    static constexpr int kRootMidiNote = 64;
+
+    m_synth.addSound(new juce::SamplerSound("sample",
+        *reader,
+        allNotes,
+        kRootMidiNote,
+        0.0,
+        0.1,
+        10.0));
+}
+
+void SamplePluginProcessor::processBlockImpl(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages, AudioDebug::ScopedJuceDebugBlock* scope)
+{
+    m_synth.renderNextBlock(buffer, midiMessages, 0, buffer.getNumSamples());
+
+    if (scope)
     {
-        auto pos = procPlayHead->getPosition();
-        if (pos.hasValue())
+        for (const auto& midi : midiMessages)
         {
-            auto isPlaying = pos->getIsPlaying();
-
-            // Useful toggle for MIDI synths to only send data when DAW is playing
-            if (m_isPlaying != isPlaying)
+            const auto& msg = midi.getMessage();
+            if (msg.isNoteOn())
             {
-                auto* pDebugger = AudioDebug::AudioDebugger::get();
-                if (isPlaying && pDebugger) {
-                    pDebugger->prepare(this);
-                }
-
-                m_isPlaying = isPlaying;
+                int32_t pos = AudioDebug::AudioDebugger::get()->getCurrentBufferTimestamp() + (int32_t)std::round(msg.getTimeStamp());
+                auto& metadata = scope->raw().metadata();
+                constexpr char* text("NoteOn marker");
+                AudioDebug::Metadata::addMarkerText(metadata, pos, 0, 0, 0, text, strlen(text));
             }
         }
     }
-
-    processInternal(buffer.getNumSamples(), midiMessages, data);
-}
-
-void SamplePluginProcessor::processInternal(int numSamples, juce::MidiBuffer& midiMessages, float* const* data)
-{
-    auto* pDebugger = AudioDebug::AudioDebugger::get();
-    if (pDebugger && m_isPlaying)
-    {
-        // Push Midi events to Debugger
-        {
-            for (const auto metadata : midiMessages)
-            {
-                auto message = metadata.getMessage();
-                if (!message.isSysEx())
-                {
-                    pDebugger->pushMidiEvent(metadata.samplePosition, message.getRawDataSize(), message.getRawData());
-                }
-            }
-
-            pDebugger->writeAllMidiEvents();
-        }
-
-        // Push Input Data
-        pDebugger->pushAllInputSamples(numSamples, getTotalNumInputChannels(), data);
-
-        // Push Output Data
-        pDebugger->pushAllOutputSamples(numSamples, getTotalNumOutputChannels(), data);
-
-        // Add metadata marker for Start of Buffer
-        std::vector<uint8_t> meta_data;
-        AudioDebug::Metadata::addBufferStartMarker(meta_data, pDebugger->getCurrentWrittenBufferSize());
-        pDebugger->addMetadata(meta_data);
-
-        // Signal end of block (required call)
-        pDebugger->sendBlockEnd();
-    }
-}
-
-void SamplePluginProcessor::processBlockRegenerate(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
-{
-    processInternal(buffer.getNumSamples(), midiMessages, buffer.getArrayOfWritePointers());
 }
 
 juce::AudioProcessorEditor* SamplePluginProcessor::createEditor()
@@ -105,7 +87,7 @@ juce::AudioProcessorEditor* SamplePluginProcessor::createEditor()
     return new SamplePluginEditor(*this);
 }
 
-juce::AudioProcessor *JUCE_CALLTYPE createPluginFilter()
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
 {
     return new SamplePluginProcessor();
 }

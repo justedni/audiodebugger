@@ -465,7 +465,7 @@ AudioDebuggerUI::AudioDebuggerUI(DebugProcessor* processor)
     m_controlPanel->addOption(EDefaultOptions::SampleValues, "Sample values", true);
 
     zoomVSlider.reset(new juce::Slider(juce::Slider::SliderStyle::LinearVertical, juce::Slider::TextBoxBelow));
-    zoomVSlider->setRange(1, 20, 0);
+    zoomVSlider->setRange(1, 40, 0);
     zoomVSlider->setValue(1);
     zoomVSlider->setNumDecimalPlacesToDisplay(0);
     zoomVSlider->setTextBoxStyle(juce::Slider::TextBoxBelow, false, 30, 20);
@@ -675,6 +675,8 @@ void AudioDebuggerUI::updateSampleCache_()
         viewportStartSample + viewportLengthSamples + padding);
     int64_t cacheLength = cacheEnd - cacheStart;
 
+    sampleCache.bitDepth = AudioDebugger::get()->getBitDepth();
+
     if (sampleCache.isValid() &&
         sampleCache.contains(viewportStartSample) &&
         sampleCache.contains(viewportStartSample + viewportLengthSamples - 1))
@@ -830,6 +832,8 @@ void AudioDebuggerUI::timerCallback()
     auto* pDebugger = AudioDebug::AudioDebugger::get();
     if (!pDebugger)
         return;
+
+    pDebugger->serviceFromMessageThread();
 
     // Use the following code to auto-load a file if required
     auto* autoConnectButton = m_parentComponent->getAutoConnectButton();

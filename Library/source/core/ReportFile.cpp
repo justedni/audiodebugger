@@ -210,17 +210,15 @@ bool ReportFile::peekNextBlockHeader(BlockHeader& out_header)
 
     BlockHeader header;
     m_file.read(reinterpret_cast<char*>(&header), sizeof(BlockHeader));
+    const bool complete = (m_file.gcount() == sizeof(BlockHeader));
 
-    m_file.seekg(pos);
     m_file.clear();
+    m_file.seekg(pos);
 
-    if (m_file.gcount() == sizeof(BlockHeader))
-    {
+    if (complete)
         out_header = header;
-        return true;
-    }
 
-    return false;
+    return complete;
 }
 
 bool ReportFile::readFileBlock(AudioDebug::ReadBlock& out_block, uint32_t& out_blockSize)
@@ -237,8 +235,8 @@ bool ReportFile::readFileBlock(AudioDebug::ReadBlock& out_block, uint32_t& out_b
     {
         if (m_liveMode)
         {
-            m_file.seekg(current_pos);
             m_file.clear();
+            m_file.seekg(current_pos);
         }
     };
 
@@ -254,9 +252,18 @@ bool ReportFile::readFileBlock(AudioDebug::ReadBlock& out_block, uint32_t& out_b
     BlockType type = static_cast<BlockType>(header.block_type);
     if (!isBlockValid(type))
     {
+        // TODO: this should raise a "critical error", not silently fail
+        // The file is potentially corrupted. Re-trying later won't help
         seekAndClear();
         return false;
     }
+
+    //static constexpr int64_t kMaxReasonableBlockSize = 1024 * 1024;
+    //if (header.data_size > kMaxReasonableBlockSize)
+    //{
+    //    seekAndClear();
+    //    return false;
+    //}
 
     std::vector<uint8_t> data(header.data_size);
     m_file.read(reinterpret_cast<char*>(data.data()), header.data_size);
@@ -272,12 +279,6 @@ bool ReportFile::readFileBlock(AudioDebug::ReadBlock& out_block, uint32_t& out_b
 
     out_block = ReadBlock(type, header.block_id, std::move(data), checksum_valid);
     out_blockSize = header.data_size;
-
-    BlockHeader nextHeader;
-    if (peekNextBlockHeader(nextHeader) && nextHeader.block_type != 0)
-    {
-        isBlockValid(static_cast<BlockType>(nextHeader.block_type));
-    }
 
     return true;
 }
@@ -342,7 +343,7 @@ EProcessRet ReportFile::processOneBlock(ReadBlock& block, EProcessType processTy
         {
             if (processType != EProcessType::DryRun)
             {
-                std::vector<RawMidiMessage> result = AudioDebugger::readAllMidiEvents(block.data);
+                std::vector<RawMidiMessage> result = Metadata::readAllMidiEvents(block.data);
                 int actualTimestamp = block.block_id * header.block_size;
 
                 onMidi(actualTimestamp, std::move(result));
@@ -397,7 +398,7 @@ void ReportFile::simulateReadBlock(const ReadBlock& block, EProcessType processT
     {
         if (processType != EProcessType::DryRun)
         {
-            std::vector<RawMidiMessage> result = AudioDebugger::readAllMidiEvents(block.data);
+            std::vector<RawMidiMessage> result = Metadata::readAllMidiEvents(block.data);
             int actualTimestamp = block.block_id * header.block_size;
 
             onMidi(actualTimestamp, std::move(result));
@@ -681,13 +682,42 @@ void writeBlockHeader(std::ostream& os, const BlockHeader& h)
     assert(internalCount == sizeof(BlockHeader));
 }
 
-uint32_t calculateChecksum(const std::vector<uint8_t>& data)
-{
-    uint32_t sum = 0;
-    for (uint8_t byte : data) {
-        sum += byte;
-    }
-    return sum;
+namespace {
+
+    struct Crc32Table
+    {
+        uint32_t values[256];
+
+        Crc32Table() noexcept
+        {
+            const uint32_t kPolynomial = 0xEDB88320u;
+
+            for (uint32_t i = 0; i < 256; ++i)
+            {
+                uint32_t c = i;
+                for (int k = 0; k < 8; ++k)
+                    c = (c & 1u) ? (kPolynomial ^ (c >> 1)) : (c >> 1);
+
+                values[i] = c;
+            }
+        }
+    };
+
 }
 
+uint32_t calculateChecksum(const uint8_t* data, size_t size)
+{
+    static const Crc32Table table;
+
+    uint32_t crc = 0xFFFFFFFFu;
+    for (size_t i = 0; i < size; ++i)
+        crc = table.values[(crc ^ data[i]) & 0xFFu] ^ (crc >> 8);
+
+    return crc ^ 0xFFFFFFFFu;
+}
+
+uint32_t calculateChecksum(const std::vector<uint8_t>& data)
+{
+    return calculateChecksum(data.data(), data.size());
+}
 } // namespace AudioDebug

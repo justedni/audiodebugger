@@ -5,9 +5,8 @@
 
 #include "juce/JuceDebugProcessor.h"
 
-namespace AudioDebug {
-struct RawMidiMessage;
-}
+#include <juce_audio_formats/juce_audio_formats.h>
+#include <juce_audio_basics/juce_audio_basics.h>
 
 class SamplePluginEditor;
 
@@ -18,13 +17,11 @@ public:
     ~SamplePluginProcessor() override;
 
     //AudioDebug::JuceDebugProcessor interface
-    void processBlockRegenerate(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages) override;
+    void prepareToPlayImpl(double sampleRate, int samplesPerBlock) override;
+    void processBlockImpl(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages, AudioDebug::ScopedJuceDebugBlock* scope) override;
 
     //juce::AudioProcessor interface
-    void releaseResources() override {}
     bool isBusesLayoutSupported(const BusesLayout& layouts) const override;
-
-    void processBlock(juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
 
     juce::AudioProcessorEditor* createEditor() override;
     bool hasEditor() const override { return true; }
@@ -33,12 +30,11 @@ public:
 
     bool acceptsMidi() const override { return true; }
     bool producesMidi() const override { return false; }
-    bool isMidiEffect() const override { return false; }
     double getTailLengthSeconds() const override { return 0.0; }
 
     int getNumPrograms() override { return 1; }
     int getCurrentProgram() override { return 0; }
-    void setCurrentProgram ([[maybe_unused]] int index) override {}
+    void setCurrentProgram([[maybe_unused]] int index) override {}
     const juce::String getProgramName([[maybe_unused]] int index) override { return juce::String(""); }
     void changeProgramName([[maybe_unused]] int index, [[maybe_unused]] const juce::String& newName) override {}
 
@@ -46,10 +42,9 @@ public:
     void setStateInformation([[maybe_unused]] const void* data, [[maybe_unused]] int sizeInBytes) override {}
 
 private:
-    void processInternal(int numSamples, juce::MidiBuffer& midiMessages, float* const* data);
-
-    bool m_isPlaying = false;
+    juce::AudioFormatManager m_formatManager;
+    juce::Synthesiser m_synth;
 
 private:
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SamplePluginProcessor)
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SamplePluginProcessor)
 };

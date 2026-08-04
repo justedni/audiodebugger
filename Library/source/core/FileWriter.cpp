@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "core/FileWriter.h"
+#include "core/BlockWriter.h"
 
 #include <assert.h>
 
@@ -18,26 +19,18 @@ struct WriteBlock
 class AudioBlockQueue
 {
 public:
-    AudioBlockQueue(size_t capacity, int maxBlockSize)
+    AudioBlockQueue(size_t capacity, size_t maxBlockSize)
         : m_mask(capacity - 1)
         , m_blocks(capacity)
-        , m_blockMaxSize(maxBlockSize)
     {
-        assert((capacity & (capacity - 1)) == 0 && "capacity must be power of two");
+        assert(capacity >= 2 && (capacity & (capacity - 1)) == 0 && "capacity must be a power of two");
+
         for (auto& b : m_blocks)
-            b.data.resize(maxBlockSize);
-    }
-
-    void resizeIfNecessary(int requiredSize, WriteBlock* block)
-    {
-        if (requiredSize > m_blockMaxSize)
-            m_blockMaxSize = requiredSize;
-
-        // Ideally, the cache should always be ready in advance, but
-        // in emergency worst case scenario, resize it (in audio thread)
-        if (m_blockMaxSize > block->data.size())
         {
-            block->data.resize(m_blockMaxSize);
+            b.data.resize(maxBlockSize);
+            b.dataSize = 0;
+            b.type = BlockType::INVALID;
+            b.block_id = 0;
         }
     }
 
@@ -79,7 +72,6 @@ public:
 private:
     const size_t m_mask;
     std::vector<WriteBlock> m_blocks;
-    int m_blockMaxSize;
     alignas(64) std::atomic<size_t> m_writeIdx{ 0 };
     alignas(64) std::atomic<size_t> m_readIdx{ 0 };
 };
@@ -97,15 +89,19 @@ uint8_t getBitSize(EBitDepth bitDepth)
     return sizeof(uint32_t);
 }
 
-
 FileWriter::FileWriter(const std::string& filename, const FileHeader& header)
     : m_filename(filename)
     , m_fileHeader(header)
     , m_running(false)
 {
-    int maxChannels = std::max(header.in_channels, header.out_channels);
-    int maxSize = maxChannels * header.block_size * getBitSize((EBitDepth)header.bit_depth);
-    m_queue.reset(new AudioBlockQueue(4, maxSize));
+    const uint32_t maxChannels = std::max(header.in_channels, header.out_channels);
+    const size_t audioWorstCase = static_cast<size_t>(maxChannels)
+                                * static_cast<size_t>(header.block_size)
+                                * getBitSize(static_cast<EBitDepth>(header.bit_depth));
+
+    m_maxBlockBytes = std::max(audioWorstCase, FileWriterConfig::maxBlockBytes);
+
+    m_queue.reset(new AudioBlockQueue(FileWriterConfig::queueCapacity, m_maxBlockBytes));
 }
 
 FileWriter::~FileWriter()
@@ -115,23 +111,27 @@ FileWriter::~FileWriter()
 
 bool FileWriter::start()
 {
-    m_file.open(m_filename, std::ios::binary | std::ios::in | std::ios::out | std::ios::trunc);
+    m_file.open(m_filename, std::ios::binary | std::ios::out | std::ios::trunc);
     if (!m_file.is_open()) {
         std::cerr << "Failed to open file: " << m_filename << std::endl;
         return false;
     }
 
+    m_writtenAudioBlocksCount.store(0, std::memory_order_relaxed);
+    m_lastWrittenBlockCount = 0;
+    m_pendingFlush = false;
+
     writeFileHeader(m_file, m_fileHeader);
     m_file.flush();
 
-    m_running = true;
+    m_running.store(true, std::memory_order_release);
     m_writerThread = std::thread(&FileWriter::writerLoop, this);
     return true;
 }
 
 void FileWriter::stop()
 {
-    m_running = false;
+    m_running.store(false, std::memory_order_release);
 
     if (m_writerThread.joinable())
         m_writerThread.join();
@@ -140,6 +140,7 @@ void FileWriter::stop()
 
     if (m_file.is_open())
     {
+        updateBlockCountInFile();
         m_file.flush();
         m_file.close();
     }
@@ -154,53 +155,93 @@ void FileWriter::drainRemaining()
     }
 }
 
-void FileWriter::writeBlock(BlockType type, uint32_t blockId, const std::vector<uint8_t>& data)
+BlockWriter FileWriter::beginBlock(BlockType type, uint32_t blockId) noexcept
 {
-    if (auto* slot = m_queue->beginWrite())
-    {
-        slot->type = type;
-        slot->block_id = blockId;
+    assert(m_openSlot == nullptr && "a BlockWriter is already open - commit it first");
 
-        m_queue->resizeIfNecessary(data.size(), slot);
-
-        std::memcpy(slot->data.data(), data.data(), data.size());
-        slot->dataSize = data.size();
-
-        if (m_blockAddedCallback)
-            m_blockAddedCallback((uint32_t)type, slot->data.data(), slot->dataSize);
-
-        m_queue->commitWrite();
-    }
-    else
+    auto* slot = m_queue->beginWrite();
+    if (slot == nullptr)
     {
         assert(false);
+        return BlockWriter{};
+    }
+
+    slot->type     = type;
+    slot->block_id = blockId;
+    slot->dataSize = 0;
+
+    m_openSlot = slot;
+
+    return BlockWriter(this, slot->data.data(), slot->data.size(), m_fileHeader.bit_depth);
+}
+
+bool FileWriter::finishBlock(bool committed, size_t size) noexcept
+{
+    auto* slot = m_openSlot;
+    m_openSlot = nullptr;
+
+    if (slot == nullptr)
+    {
+        assert(false);
+        return false;
+    }
+
+    if (!committed)
+    {
+        assert(false);
+        return false;
+    }
+
+    slot->dataSize = static_cast<uint32_t>(size);
+
+    if (m_blockAddedCallback)
+        m_blockAddedCallback(static_cast<uint32_t>(slot->type), slot->data.data(), slot->dataSize);
+
+    m_queue->commitWrite();
+    return true;
+}
+
+void FileWriter::abandonBlock() noexcept
+{
+    if (m_openSlot != nullptr)
+    {
+        m_openSlot = nullptr;
     }
 }
 
-void FileWriter::writeAudioBlockDirect(BlockType type, uint32_t blockId, int numSamples, const std::function<void(SampleWriter&)>& f)
+bool FileWriter::writeBlock(BlockType type, uint32_t blockId, const std::vector<uint8_t>& data)
 {
-    if (auto* slot = m_queue->beginWrite())
-    {
-        slot->type = type;
-        slot->block_id = blockId;
-
-        const size_t requiredBytes = static_cast<size_t>(numSamples) * getBitSize((EBitDepth)m_fileHeader.bit_depth);
-        m_queue->resizeIfNecessary(requiredBytes, slot);
-
-        SampleWriter writer(slot->data.data(), slot->data.size(), m_fileHeader.bit_depth);
-        f(writer);
-
-        slot->dataSize = writer.bytesWritten();
-
-        if (m_blockAddedCallback)
-            m_blockAddedCallback((uint32_t)type, slot->data.data(), slot->dataSize);
-
-        m_queue->commitWrite();
-    }
-    else
+    auto block = beginBlock(type, blockId);
+    if (!block)
     {
         assert(false);
+        return false;
     }
+
+    block.append(data.data(), data.size());
+    return block.commit();
+}
+
+bool FileWriter::writeAudioBlockDirect(BlockType type,
+                                       uint32_t blockId,
+                                       int numSamples,
+                                       const std::function<void(SampleWriter&)>& f)
+{
+    const size_t requiredBytes = static_cast<size_t>(numSamples)
+                               * getBitSize(static_cast<EBitDepth>(m_fileHeader.bit_depth));
+
+    if (requiredBytes > m_maxBlockBytes)
+    {
+        assert(false && "audio block larger than maxBlockBytes - raise FileWriterConfig::maxBlockBytes");
+        return false;
+    }
+
+    auto block = beginBlock(type, blockId);
+    if (!block)
+        return false;
+
+    block.writeSamples(f);
+    return block.commit();
 }
 
 bool FileWriter::hasPendingWrites() const
@@ -210,51 +251,71 @@ bool FileWriter::hasPendingWrites() const
 
 void FileWriter::writerLoop()
 {
+    auto lastFlush = std::chrono::steady_clock::now();
+
     while (m_running.load(std::memory_order_acquire))
     {
-        if (auto* block = m_queue->beginRead())
+        bool bWorkWasDone = false;
+
+        while (auto* block = m_queue->beginRead())
         {
             writeBlockToFile(*block);
             m_queue->commitRead();
+            bWorkWasDone = true;
         }
-        else
+
+        const auto now = std::chrono::steady_clock::now();
+        if (m_pendingFlush && (now - lastFlush) >= FileWriterConfig::flushInterval)
         {
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            updateBlockCountInFile();
+            m_file.flush();
+            m_pendingFlush = false;
+            lastFlush = now;
         }
+
+        if (!bWorkWasDone)
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
 }
 
 void FileWriter::writeBlockToFile(const WriteBlock& block)
 {
     if (!m_file.is_open())
-    {
         return;
-    }
 
     BlockHeader header;
     header.block_type = static_cast<uint32_t>(block.type);
-    header.data_size = static_cast<uint32_t>(block.dataSize);
+    header.data_size = block.dataSize;
     header.block_id = block.block_id;
-    header.checksum = calculateChecksum(block.data);
-
-    std::streampos end_pos = m_file.tellp();
+    header.checksum = calculateChecksum(block.data.data(), block.dataSize);
 
     writeBlockHeader(m_file, header);
-    m_file.write(reinterpret_cast<const char*>(block.data.data()), block.dataSize);
+    m_file.write(reinterpret_cast<const char*>(block.data.data()), static_cast<std::streamsize>(block.dataSize));
 
     if (block.type == BlockType::AUDIOOUT)
-    {
-        m_writtenAudioBlocksCount++;
-        m_fileHeader.blocks_count = m_writtenAudioBlocksCount.load();
+        m_writtenAudioBlocksCount.fetch_add(1, std::memory_order_relaxed);
 
-        constexpr std::streamoff total_blocks_offset = offsetof(FileHeader, blocks_count);
-
-        m_file.seekp(total_blocks_offset);
-        m_file.write(reinterpret_cast<const char*>(&m_fileHeader.blocks_count), sizeof(uint32_t));
-        m_file.seekp(0, std::ios::end);
-    }
-
-    m_file.flush();
+    m_pendingFlush = true;
 }
 
+void FileWriter::updateBlockCountInFile()
+{
+    if (!m_file.is_open())
+        return;
+
+    const uint32_t count = m_writtenAudioBlocksCount.load(std::memory_order_relaxed);
+    if (count == m_lastWrittenBlockCount)
+        return;
+
+    m_fileHeader.blocks_count = count;
+
+    constexpr std::streamoff total_blocks_offset = offsetof(FileHeader, blocks_count);
+
+    const std::streampos end_pos = m_file.tellp();
+    m_file.seekp(total_blocks_offset);
+    m_file.write(reinterpret_cast<const char*>(&m_fileHeader.blocks_count), sizeof(uint32_t));
+    m_file.seekp(end_pos);
+
+    m_lastWrittenBlockCount = count;
+}
 } // namespace AudioDebug

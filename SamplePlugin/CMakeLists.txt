@@ -2,13 +2,17 @@ cmake_minimum_required(VERSION 3.15)
 
 project(SamplePlugin VERSION 1.0.0)
 
+set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin/$<CONFIG>)
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin/$<CONFIG>)
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin/$<CONFIG>)
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 juce_add_plugin(${PROJECT_NAME}
     COMPANY_NAME "Vincent Dortel"
-    IS_SYNTH FALSE
-    NEEDS_MIDI_INPUT FALSE
+    IS_SYNTH TRUE
+    NEEDS_MIDI_INPUT TRUE
     NEEDS_MIDI_OUTPUT FALSE
     IS_MIDI_EFFECT FALSE
     EDITOR_WANTS_KEYBOARD_FOCUS FALSE
@@ -18,6 +22,12 @@ juce_add_plugin(${PROJECT_NAME}
     FORMATS VST3
     NEEDS_WEB_BROWSER FALSE
     PRODUCT_NAME SamplePlugin)
+
+juce_add_binary_data(SamplePluginData
+    SOURCES
+        Resource/StStrings_64.wav)
+
+set_target_properties(SamplePluginData PROPERTIES POSITION_INDEPENDENT_CODE TRUE)
 
 target_sources(${PROJECT_NAME}
     PRIVATE
@@ -43,8 +53,16 @@ target_include_directories(${PROJECT_NAME}
 target_link_libraries(${PROJECT_NAME}
     PRIVATE
         AudioDebuggerLib
+        SamplePluginData
+        juce::juce_audio_formats
     PUBLIC
         juce::juce_recommended_config_flags
         juce::juce_recommended_lto_flags
         juce::juce_recommended_warning_flags
+)
+
+
+set_target_properties(${PROJECT_NAME} PROPERTIES
+    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/bin/$<CONFIG>"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/bin/$<CONFIG>"
 )
