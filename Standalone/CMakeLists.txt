@@ -32,9 +32,10 @@ set(PLATFORM_DIR "x64")
 
 target_link_libraries(${PROJECT_NAME}
     PRIVATE
-        AudioDebuggerLib
+        AudioDebugJuce
         juce::juce_core
         juce::juce_audio_basics
+        juce::juce_audio_processors
 )
 
 set_target_properties(${PROJECT_NAME} PROPERTIES

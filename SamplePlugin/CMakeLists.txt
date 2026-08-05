@@ -2,12 +2,11 @@ cmake_minimum_required(VERSION 3.15)
 
 project(SamplePlugin VERSION 1.0.0)
 
-set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin/$<CONFIG>)
-set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin/$<CONFIG>)
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin/$<CONFIG>)
+set(SAMPLE_PLUGIN_BIN_DIR ${CMAKE_CURRENT_SOURCE_DIR}/bin/$<CONFIG>)
 
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${SAMPLE_PLUGIN_BIN_DIR})
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${SAMPLE_PLUGIN_BIN_DIR})
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${SAMPLE_PLUGIN_BIN_DIR})
 
 juce_add_plugin(${PROJECT_NAME}
     COMPANY_NAME "Vincent Dortel"
@@ -38,21 +37,13 @@ target_sources(${PROJECT_NAME}
 )
 
 target_compile_definitions(${PROJECT_NAME}
-    PUBLIC
-        JUCE_WEB_BROWSER=0
-        JUCE_USE_CURL=0
+    PRIVATE
         JUCE_VST3_CAN_REPLACE_VST2=0)
 
 
-target_include_directories(${PROJECT_NAME}
-    PUBLIC
-        ${CMAKE_CURRENT_SOURCE_DIR}/../Library/source
-        ${CMAKE_CURRENT_SOURCE_DIR}/../Library/include
-)
-
 target_link_libraries(${PROJECT_NAME}
     PRIVATE
-        AudioDebuggerLib
+        AudioDebugJuce
         SamplePluginData
         juce::juce_audio_formats
     PUBLIC
@@ -61,8 +52,9 @@ target_link_libraries(${PROJECT_NAME}
         juce::juce_recommended_warning_flags
 )
 
-
 set_target_properties(${PROJECT_NAME} PROPERTIES
-    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/bin/$<CONFIG>"
-    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/bin/$<CONFIG>"
+    CXX_STANDARD 17
+    CXX_STANDARD_REQUIRED YES
+    LIBRARY_OUTPUT_DIRECTORY ${SAMPLE_PLUGIN_BIN_DIR}
+    RUNTIME_OUTPUT_DIRECTORY ${SAMPLE_PLUGIN_BIN_DIR}
 )

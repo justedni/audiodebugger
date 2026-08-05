@@ -1,6 +1,9 @@
 cmake_minimum_required(VERSION 3.15)
 
-project(AudioDebuggerLib VERSION 1.0.0)
+# The JUCE layer is optional. A consumer that only wants capture
+# can configure this project with -DAUDIODEBUG_BUILD_JUCE=OFF
+option(AUDIODEBUG_BUILD_JUCE "Build the JUCE UI and helper layer" ON)
+
 
 set(CORE_INTERFACE
     include/core/AudioDebug.h
@@ -8,11 +11,6 @@ set(CORE_INTERFACE
     include/core/DebugProcessor.h
     include/core/RptFileFormat.h
     include/core/SampleWriter.h
-)
-
-set(JUCE_INTERFACE
-    include/juce/AudioDebuggerUI.h
-    include/juce/CustomSlider.h
 )
 
 set(CORE_SOURCE
@@ -28,74 +26,97 @@ set(CORE_SOURCE
     source/core/RingBuffer.h
 )
 
-set(JUCE_SOURCE
-    source/juce/AudioDebuggerUI.cpp
-    source/juce/ChannelComponent.cpp
-    source/juce/ChannelComponent.h
-    source/juce/ControlPanel.cpp
-    source/juce/ControlPanel.h
-    source/juce/CustomSlider.cpp
-    source/juce/DebuggerSpawner.cpp
-    source/juce/DiffTrackComponent.cpp
-    source/juce/DiffTrackComponent.h
-    source/juce/JuceDebugProcessor.cpp
-    source/juce/MarkerStore.cpp
-    source/juce/MarkerStore.h
-    source/juce/MidiTrackComponent.cpp
-    source/juce/MidiTrackComponent.h
-    source/juce/MipmapBuilder.cpp
-    source/juce/MipmapBuilder.h
-    source/juce/Mipmaps.cpp
-    source/juce/Mipmaps.h
-    source/juce/OptionPanel.cpp
-    source/juce/OptionPanel.h
-    source/juce/OverlayComponent.cpp
-    source/juce/OverlayComponent.h
-    source/juce/WaveformOverview.cpp
-    source/juce/WaveformOverview.h
-)
+add_library(AudioDebugCore STATIC)
 
-set(ALL_SOURCES
-    ${CORE_INTERFACE}
-    ${JUCE_INTERFACE}
-    ${CORE_SOURCE}
-    ${JUCE_SOURCE}
-)
+target_sources(AudioDebugCore PRIVATE ${CORE_INTERFACE} ${CORE_SOURCE})
 
-add_library(${PROJECT_NAME} STATIC)
-
-target_sources(${PROJECT_NAME} PRIVATE
-    ${ALL_SOURCES}
-)
-
-target_compile_definitions(${PROJECT_NAME}
+target_include_directories(AudioDebugCore
     PUBLIC
-        JUCE_WEB_BROWSER=0
-        JUCE_USE_CURL=0
-        JUCE_DISPLAY_SPLASH_SCREEN=0
-        JUCE_REPORT_APP_USAGE=0
-        JUCE_STRICT_REFCOUNTEDPOINTER=1
-)
-
-target_include_directories(${PROJECT_NAME}
-    PUBLIC
-        ${CMAKE_CURRENT_SOURCE_DIR}/source
         ${CMAKE_CURRENT_SOURCE_DIR}/include
-)
-
-target_link_libraries(${PROJECT_NAME}
     PRIVATE
-        juce::juce_core
-        juce::juce_data_structures
-        juce::juce_events
-        juce::juce_graphics
-        juce::juce_gui_basics
+        ${CMAKE_CURRENT_SOURCE_DIR}/source
 )
 
-set_target_properties(${PROJECT_NAME} PROPERTIES
+set_target_properties(AudioDebugCore PROPERTIES
     CXX_STANDARD 17
-    CXX_STANDARD_REQUIRED YES)
+    CXX_STANDARD_REQUIRED YES
+    POSITION_INDEPENDENT_CODE ON)
+
+source_group("interface" FILES ${CORE_INTERFACE})
+source_group("source"    FILES ${CORE_SOURCE})
 
 
-source_group("interface" FILES ${CORE_INTERFACE} ${JUCE_INTERFACE})
-source_group("source" FILES ${CORE_SOURCE} ${JUCE_SOURCE})
+if(AUDIODEBUG_BUILD_JUCE)
+
+    set(JUCE_INTERFACE
+        include/juce/AudioDebuggerUI.h
+        include/juce/CustomSlider.h
+        include/juce/JuceDebugProcessor.h
+    )
+
+    set(JUCE_SOURCE
+        source/juce/AudioDebuggerUI.cpp
+        source/juce/ChannelComponent.cpp
+        source/juce/ChannelComponent.h
+        source/juce/ControlPanel.cpp
+        source/juce/ControlPanel.h
+        source/juce/CustomSlider.cpp
+        source/juce/DebuggerSpawner.cpp
+        source/juce/DiffTrackComponent.cpp
+        source/juce/DiffTrackComponent.h
+        source/juce/JuceDebugProcessor.cpp
+        source/juce/MarkerStore.cpp
+        source/juce/MarkerStore.h
+        source/juce/MidiTrackComponent.cpp
+        source/juce/MidiTrackComponent.h
+        source/juce/MipmapBuilder.cpp
+        source/juce/MipmapBuilder.h
+        source/juce/Mipmaps.cpp
+        source/juce/Mipmaps.h
+        source/juce/OptionPanel.cpp
+        source/juce/OptionPanel.h
+        source/juce/OverlayComponent.cpp
+        source/juce/OverlayComponent.h
+        source/juce/WaveformOverview.cpp
+        source/juce/WaveformOverview.h
+    )
+
+    add_library(AudioDebugJuce STATIC)
+
+    target_sources(AudioDebugJuce PRIVATE ${JUCE_INTERFACE} ${JUCE_SOURCE})
+
+    target_include_directories(AudioDebugJuce
+        PUBLIC
+            ${CMAKE_CURRENT_SOURCE_DIR}/include
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/source
+    )
+
+    target_link_libraries(AudioDebugJuce
+        PUBLIC
+            AudioDebugCore
+            juce::juce_core
+            juce::juce_data_structures
+            juce::juce_events
+            juce::juce_graphics
+            juce::juce_gui_basics
+    )
+
+    target_compile_definitions(AudioDebugJuce
+        PUBLIC
+            JUCE_WEB_BROWSER=0
+            JUCE_USE_CURL=0
+            JUCE_DISPLAY_SPLASH_SCREEN=0
+            JUCE_REPORT_APP_USAGE=0
+            JUCE_STRICT_REFCOUNTEDPOINTER=1
+    )
+
+    set_target_properties(AudioDebugJuce PROPERTIES
+        CXX_STANDARD 17
+        CXX_STANDARD_REQUIRED YES
+        POSITION_INDEPENDENT_CODE ON)
+
+    source_group("interface" FILES ${JUCE_INTERFACE})
+    source_group("source"    FILES ${JUCE_SOURCE})
+
+endif()
