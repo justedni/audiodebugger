@@ -50,14 +50,15 @@ if(AUDIODEBUG_BUILD_JUCE)
 
     set(JUCE_INTERFACE
         include/juce/AudioDebuggerUI.h
+        include/juce/ChannelComponent.h
         include/juce/CustomSlider.h
+        include/juce/DebuggerSpawner.h
         include/juce/JuceDebugProcessor.h
     )
 
     set(JUCE_SOURCE
         source/juce/AudioDebuggerUI.cpp
         source/juce/ChannelComponent.cpp
-        source/juce/ChannelComponent.h
         source/juce/ControlPanel.cpp
         source/juce/ControlPanel.h
         source/juce/CustomSlider.cpp

@@ -11,17 +11,6 @@
 
 namespace AudioDebug {
 
-struct MarkerPair
-{
-    MarkerPair(Marker&& m)
-        : main(std::move(m))
-    {}
-
-    Marker main;
-    bool bHasRegen = false;
-    Marker regen;
-};
-
 class MarkerStore
 {
 public:

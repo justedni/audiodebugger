@@ -5,13 +5,11 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
-#include "core/ReportFile.h"
+#include "core/RptFileFormat.h"
 
 namespace AudioDebug {
 
 class AudioDebuggerUI;
-class WaveformOverview;
-class ReportFile;
 
 
 class TrackComponent : public juce::Component

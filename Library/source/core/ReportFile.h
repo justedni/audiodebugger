@@ -50,27 +50,7 @@ using MidiCallback = std::function<void(int64_t timestamp, std::vector<RawMidiMe
 enum EProcessRet : uint8_t { Success, Sleep, Stop };
 
 
-struct SampleCache
-{
-    int64_t startSample;
-    int64_t numSamples;
-    std::vector<float> samples;
-
-    bool contains(int64_t sample) const {
-        return sample >= startSample && sample < (startSample + numSamples);
-    }
-
-    bool isValid() const {
-        return numSamples > 0 && !samples.empty();
-    }
-
-    void clear() {
-        samples.clear();
-        numSamples = 0;
-    }
-};
-
-class ReportFile
+class ReportFile : public FileReader
 {
 public:
     enum EFileSlot : uint8_t
@@ -92,15 +72,15 @@ public:
     };
 
     const std::string& getFilePath() const { return m_filePath; }
-    const FileHeader& getHeader() const { return m_header; }
+    const FileHeader& getHeader() const override { return m_header; }
 
     bool openFile(bool liveMode);
     void initChanStates(bool bHasInput, uint8_t inChannels, uint8_t outChannels, uint32_t blockSize);
     int64_t getFileOffset();
     void seekToDataStart();
-    void seekTo(uint64_t offset);
+    void seekTo(uint64_t offset) override;
     bool peekNextBlockHeader(BlockHeader& out_header);
-    bool readFileBlock(ReadBlock& out_block, uint32_t& out_blockSize);
+    bool readFileBlock(ReadBlock& out_block, uint32_t& out_blockSize) override;
     void clearFlags();
 
     EProcessRet processOneBlock(ReadBlock& block, EProcessType processType, bool bStopAtEOF, int32_t& audioSamplesProcessed);
@@ -110,7 +90,7 @@ public:
 
     void fillSampleCache(int64_t startSample, int64_t numSamples, std::vector<SampleCache*> out_cache);
 
-    bool findOffsetForCustomBlock(int64_t sampleNumber, uint64_t& out_offset, int64_t& out_blockStart);
+    bool findOffsetForCustomBlock(int64_t sampleNumber, uint64_t& out_offset, int64_t& out_blockStart) override;
     bool findOffsetForSample(const std::vector<BlockEntry>& blocks, int64_t sampleNumber, uint64_t& out_offset, int64_t& out_blockStart);
 
     bool processCustomBlock(const ReadBlock& block, EProcessType processType, uint64_t blockOffset);

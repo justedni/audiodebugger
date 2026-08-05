@@ -68,6 +68,18 @@ struct Marker
     const std::vector<uint8_t>& getBinary() const { return std::get<std::vector<uint8_t>>(data); }
 };
 
+struct MarkerPair
+{
+    MarkerPair(Marker&& m)
+        : main(std::move(m))
+    {
+    }
+
+    Marker main;
+    bool bHasRegen = false;
+    Marker regen;
+};
+
 enum EBitDepth : uint8_t
 {
     Int24,

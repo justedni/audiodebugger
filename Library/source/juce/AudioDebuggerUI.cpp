@@ -811,6 +811,12 @@ int AudioDebuggerUI::chanIdToOutputIndex(int globalChanId) const
     return globalChanId - (m_numInputs + m_numOutputs);
 }
 
+int64_t AudioDebuggerUI::getTotalSamples() const { return overview->getTotalSamples(); }
+int AudioDebuggerUI::getSampleRate() const { return overview->getSampleRate(); }
+FileReader* AudioDebuggerUI::getRptFile() const  { return overview->getRptFile(); }
+FileReader* AudioDebuggerUI::getGenFile() const  { return overview->getGenFile(); }
+
+
 ChannelComponent* AudioDebuggerUI::getChannel(int globalChanId) const
 {
     if (globalChanId < 0 || globalChanId >= (int)m_channels.size())

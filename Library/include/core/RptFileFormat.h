@@ -72,4 +72,33 @@ struct ReadBlock
     }
 };
 
+struct SampleCache
+{
+    int64_t startSample;
+    int64_t numSamples;
+    std::vector<float> samples;
+
+    bool contains(int64_t sample) const {
+        return sample >= startSample && sample < (startSample + numSamples);
+    }
+
+    bool isValid() const {
+        return numSamples > 0 && !samples.empty();
+    }
+
+    void clear() {
+        samples.clear();
+        numSamples = 0;
+    }
+};
+
+class FileReader
+{
+public:
+    virtual const FileHeader& getHeader() const = 0;
+    virtual void seekTo(uint64_t offset) = 0;
+    virtual bool readFileBlock(ReadBlock& out_block, uint32_t& out_blockSize) = 0;
+    virtual bool findOffsetForCustomBlock(int64_t sampleNumber, uint64_t& out_offset, int64_t& out_blockStart) = 0;
+};
+
 } // namespace AudioDebug

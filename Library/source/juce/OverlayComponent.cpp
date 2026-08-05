@@ -82,6 +82,7 @@ void OverlayComponent::paintMarkers(juce::Graphics& g)
     const int64_t viewportStartSample = m_debugger.getViewportStartSample();
     const int64_t viewportLengthSamples = m_debugger.getViewportLengthSamples();
 
+    jassert(overview);
     auto markers = overview->getMarkers()->getMarkersInRange(viewportStartSample, viewportStartSample + viewportLengthSamples);
 
     if (markers.empty())

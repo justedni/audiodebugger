@@ -16,6 +16,7 @@ struct Marker;
 
 struct FileHeader;
 struct SampleCache;
+class FileReader;
 class ReportFile;
 
 class WaveformOverview;
@@ -201,6 +202,11 @@ protected:
 public:
     int getTotalChannels() const { return m_numInputs + m_numOutputs * 2; }
 
+    int64_t getTotalSamples() const;
+    int getSampleRate() const;
+    FileReader* getRptFile() const;
+    FileReader* getGenFile() const;
+
     int getInputChanId (int index) const { return index; }
     int getOutputChanId(int index) const { return m_numInputs + index; }
     int getRegenChanId (int index) const { return m_numInputs + m_numOutputs + index; }
@@ -251,8 +257,6 @@ protected:
     static constexpr int64_t MIN_VIEWPORT_SAMPLES = 16;
     static constexpr double RAW_SAMPLE_THRESHOLD = 16.0;
 
-    std::unique_ptr<WaveformOverview> overview;
-
     bool m_isLoading = false;
     double zoomLevel = 0.0;
     double viewportCenter = 0.0;
@@ -286,6 +290,9 @@ protected:
     friend class OverlayComponent;
     friend class MidiTrackComponent;
     friend class DiffTrackComponent;
+
+private:
+    std::unique_ptr<WaveformOverview> overview;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AudioDebuggerUI)
 };
