@@ -116,8 +116,8 @@ public:
     using SampleAccFunc = std::function<void(SampleWriter&)>;
     using BlockAddedFunc = std::function<void(uint32_t, const uint8_t*, size_t)>;
 
-    void pushAllInputSamples(int numSamples, int numChannels, float* const* buffer);
-    void pushAllOutputSamples(int numSamples, int numChannels, float* const* buffer);
+    void pushAllInputSamples(int numSamples, int numChannels, const float* const* buffer);
+    void pushAllOutputSamples(int numSamples, int numChannels, const float* const* buffer);
     void pushInDebugSamples(int numSamples, const SampleAccFunc f);
     void pushOutDebugSamples(int numSamples, const SampleAccFunc& f);
     BlockWriter& midiEventBlock() noexcept { return m_midiAccum.get(); }
@@ -202,25 +202,25 @@ public:
 
     explicit operator bool() const noexcept { return m_debugger != nullptr; }
 
-    void pushAllInputSamples(int numSamples, int numChannels, float* const* buffer)
+    void writeInput(int numSamples, int numChannels, const float* const* buffer)
     {
         if (m_debugger)
             m_debugger->pushAllInputSamples(numSamples, numChannels, buffer);
     }
 
-    void pushAllOutputSamples(int numSamples, int numChannels, float* const* buffer)
-    {
-        if (m_debugger)
-            m_debugger->pushAllOutputSamples(numSamples, numChannels, buffer);
-    }
-
-    void addInDebugSamples(int numSamples, const AudioDebugger::SampleAccFunc& f)
+    void writeInput(int numSamples, const AudioDebugger::SampleAccFunc& f)
     {
         if (m_debugger)
             m_debugger->pushInDebugSamples(numSamples, f);
     }
 
-    void addOutDebugSamples(int numSamples, const AudioDebugger::SampleAccFunc& f)
+    void writeOutput(int numSamples, int numChannels, const float* const* buffer)
+    {
+        if (m_debugger)
+            m_debugger->pushAllOutputSamples(numSamples, numChannels, buffer);
+    }
+
+    void writeOutput(int numSamples, const AudioDebugger::SampleAccFunc& f)
     {
         if (m_debugger)
             m_debugger->pushOutDebugSamples(numSamples, f);

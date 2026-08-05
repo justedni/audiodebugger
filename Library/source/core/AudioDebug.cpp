@@ -295,7 +295,7 @@ void AudioDebugger::setBlockAddedCallback(BlockAddedFunc func)
 	m_debugWriter->setBlockAddedCallback(func);
 }
 
-void AudioDebugger::pushAllInputSamples(int numSamples, int numChannels, float* const* buffer)
+void AudioDebugger::pushAllInputSamples(int numSamples, int numChannels, const float* const* buffer)
 {
 	pushInDebugSamples(numSamples, [&](auto& io)
 	{
@@ -309,7 +309,7 @@ void AudioDebugger::pushAllInputSamples(int numSamples, int numChannels, float* 
 	});
 }
 
-void AudioDebugger::pushAllOutputSamples(int numSamples, int numChannels, float* const* buffer)
+void AudioDebugger::pushAllOutputSamples(int numSamples, int numChannels, const float* const* buffer)
 {
 	pushOutDebugSamples(numSamples, [&](auto& io)
 	{

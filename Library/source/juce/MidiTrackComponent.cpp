@@ -171,7 +171,7 @@ void MidiTrackComponent::paintNotes(juce::Graphics& g)
     const int64_t viewportEnd = viewportStart + viewportLength;
 
     const int span = std::max(1, m_highestNote - m_lowestNote);
-    const float noteHeight = std::max(2.0f, ((float)getHeight() - 12.0f) / (float)span);
+    const float noteHeight = std::max(10.0f, ((float)getHeight() - 12.0f) / (float)span);
 
     const bool showLabels = (getWidth() / (double)viewportLength) > 0.0005;
 

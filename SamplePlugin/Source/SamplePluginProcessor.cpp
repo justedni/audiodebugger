@@ -71,12 +71,18 @@ void SamplePluginProcessor::processBlockImpl(juce::AudioBuffer<float>& buffer, j
         for (const auto& midi : midiMessages)
         {
             const auto& msg = midi.getMessage();
-            if (msg.isNoteOn())
+            if (msg.isNoteOn() || msg.isNoteOff())
             {
                 int32_t pos = AudioDebug::AudioDebugger::get()->getCurrentBufferTimestamp() + (int32_t)std::round(msg.getTimeStamp());
                 auto& metadata = scope->raw().metadata();
-                static constexpr const char* text = "NoteOn marker";
-                AudioDebug::Metadata::addMarkerText(metadata, pos, 0, 0, 0, text, strlen(text));
+
+                static constexpr const char* textOn = "NoteOn";
+                static constexpr const char* textOff = "NoteOff";
+
+                if (msg.isNoteOn())
+                    AudioDebug::Metadata::addMarkerText(metadata, pos, 0, 0, 0, textOn, strlen(textOn));
+                else
+                    AudioDebug::Metadata::addMarkerText(metadata, pos, 0, 0, 0, textOff, strlen(textOff));
             }
         }
     }

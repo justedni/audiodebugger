@@ -27,9 +27,9 @@ public:
 		if (!m_block)
 			return;
 
-		m_block.pushAllInputSamples(m_buffer.getNumSamples(),
-									m_numInputChannels,
-									m_buffer.getArrayOfWritePointers());
+		m_block.writeInput(m_buffer.getNumSamples(),
+						   m_numInputChannels,
+						   m_buffer.getArrayOfWritePointers());
 
 		for (const auto metadata : midiMessages)
 		{
@@ -46,9 +46,9 @@ public:
 	{
 		if (m_block)
 		{
-			m_block.pushAllOutputSamples(m_buffer.getNumSamples(),
-										 m_numOutputChannels,
-										 m_buffer.getArrayOfWritePointers());
+			m_block.writeOutput(m_buffer.getNumSamples(),
+								m_numOutputChannels,
+								m_buffer.getArrayOfWritePointers());
 		}
 
 		// m_block is declared first, so it is destroyed last: it commits the
