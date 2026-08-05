@@ -80,6 +80,15 @@ void ReportFile::initChanStates(bool bHasInput, uint8_t inChannels, uint8_t outC
 
     m_customBlocks.clear();
     m_customBlockSamplescount.store(0);
+
+    resetFrameState();
+}
+
+void ReportFile::resetFrameState()
+{
+    m_currentFrameId = 0;
+    m_currentFrameSamples.store(0);
+    m_currentFrameStart.store(0);
 }
 
 bool ReportFile::openFile(bool liveMode)
@@ -93,6 +102,7 @@ bool ReportFile::openFile(bool liveMode)
         m_customBlocks.clear();
     }
 
+    resetFrameState();
 
     auto flags = std::ios::binary | std::ios::in;
 
@@ -123,6 +133,9 @@ bool ReportFile::openFile(bool liveMode)
     }
 
     fixLegacyBitDepth();
+    fixLegacyHeaderFields();
+
+    m_usesFrames = fileUsesFrames(m_header);
 
     return true;
 }
@@ -133,6 +146,49 @@ void ReportFile::fixLegacyBitDepth()
     {
         m_header.bit_depth = EBitDepth::Int24;
     }
+}
+
+void ReportFile::fixLegacyHeaderFields()
+{
+    // v1 files were written with the reserved bytes uninitialized, so whatever is
+    // sitting in `flags` and `total_samples` is garbage. Clear it so nothing
+    // downstream can accidentally trust it.
+    if (m_header.version < ERptFileVersion::WithFrames)
+    {
+        m_header.total_samples = 0;
+    }
+
+    m_header.reserved1[0] = 0;
+    m_header.reserved1[1] = 0;
+}
+
+uint32_t ReportFile::getFrameSampleCount() const
+{
+    if (m_usesFrames)
+    {
+        const uint32_t frameSamples = m_currentFrameSamples.load();
+        if (frameSamples > 0)
+            return frameSamples;
+    }
+
+    return m_header.block_size;
+}
+
+int64_t ReportFile::getFrameStartSample(uint32_t blockId) const
+{
+    if (m_usesFrames)
+        return m_currentFrameStart.load();
+
+    // v1: positions can only be derived from the fixed block size.
+    return static_cast<int64_t>(blockId) * static_cast<int64_t>(m_header.block_size);
+}
+
+uint64_t ReportFile::getTotalSamples() const
+{
+    if (m_header.version >= ERptFileVersion::WithFrames)
+        return m_header.total_samples;
+
+    return static_cast<uint64_t>(m_header.blocks_count) * static_cast<uint64_t>(m_header.block_size);
 }
 
 int64_t ReportFile::getFileOffset()
@@ -146,6 +202,8 @@ void ReportFile::seekToDataStart()
     m_file.seekg(sizeof(AudioDebug::FileHeader), std::ios::beg);
 
     m_simulatedPos = sizeof(AudioDebug::FileHeader);
+
+    resetFrameState();
 }
 
 void ReportFile::seekTo(uint64_t offset)
@@ -185,24 +243,6 @@ bool ReportFile::findOffsetForCustomBlock(int64_t sampleNumber, uint64_t& out_of
 {
     return findOffsetForSample(m_customBlocks, sampleNumber, out_offset, out_blockStart);
 }
-
-//int ReportFile::getBlockIndexForSample(int64_t sampleNumber)
-//{
-//    auto it = std::upper_bound(
-//        audioBlocks.begin(),
-//        audioBlocks.end(),
-//        sampleNumber,
-//        [](int64_t sample, const AudioBlockEntry& entry) {
-//        return sample < entry.sampleStart;
-//    }
-//    );
-//
-//    if (it != audioBlocks.begin()) {
-//        return std::distance(audioBlocks.begin(), it - 1);
-//    }
-//
-//    return -1;
-//}
 
 bool ReportFile::peekNextBlockHeader(BlockHeader& out_header)
 {
@@ -258,13 +298,6 @@ bool ReportFile::readFileBlock(AudioDebug::ReadBlock& out_block, uint32_t& out_b
         return false;
     }
 
-    //static constexpr int64_t kMaxReasonableBlockSize = 1024 * 1024;
-    //if (header.data_size > kMaxReasonableBlockSize)
-    //{
-    //    seekAndClear();
-    //    return false;
-    //}
-
     std::vector<uint8_t> data(header.data_size);
     m_file.read(reinterpret_cast<char*>(data.data()), header.data_size);
 
@@ -281,6 +314,90 @@ bool ReportFile::readFileBlock(AudioDebug::ReadBlock& out_block, uint32_t& out_b
     out_blockSize = header.data_size;
 
     return true;
+}
+
+void ReportFile::dispatchBlock(const ReadBlock& block, EProcessType processType, uint64_t blockOffset, int32_t& out_audioSamplesProcessed)
+{
+    const auto& header = getHeader();
+
+    switch (block.type)
+    {
+    case BlockType::FRAME:
+        processFrameBlock(block);
+        break;
+
+    case BlockType::AUDIOIN:
+        processAudioBlock(block, processType, blockOffset, header.in_channels, out_audioSamplesProcessed);
+        break;
+
+    case BlockType::AUDIOOUT:
+        processAudioBlock(block, processType, blockOffset, header.out_channels, out_audioSamplesProcessed);
+        break;
+
+    case BlockType::METADATA:
+        processMetadataBlock(block, processType);
+        break;
+
+    case BlockType::MIDI:
+        processMidiBlock(block, processType);
+        break;
+
+    default:
+        processCustomBlock(block, processType, blockOffset);
+        break;
+    }
+}
+
+void ReportFile::processFrameBlock(const ReadBlock& block)
+{
+    FrameInfo info;
+    if (!readFrameInfo(block.data.data(), block.data.size(), info))
+    {
+        assert(false && "malformed FRAME block");
+        return;
+    }
+
+    m_currentFrameId = block.block_id;
+    m_currentFrameSamples.store(info.num_samples);
+    m_currentFrameStart.store(info.start_sample);
+}
+
+void ReportFile::processMetadataBlock(const ReadBlock& block, EProcessType processType)
+{
+    auto* data = block.data.data();
+    int remainingData = static_cast<int>(block.data.size());
+    size_t offset = 0;
+
+    while (remainingData > 0)
+    {
+        uint32_t block_read = 0;
+        auto marker = AudioDebug::Metadata::readMarker(data + offset, block_read);
+
+        if (block_read == 0)
+        {
+            assert(false && "marker parser made no progress - malformed METADATA block");
+            break;
+        }
+
+        if (processType != EProcessType::DryRun)
+        {
+            onMarker(std::move(marker));
+        }
+
+        remainingData -= block_read;
+        offset += block_read;
+    }
+}
+
+void ReportFile::processMidiBlock(const ReadBlock& block, EProcessType processType)
+{
+    if (processType == EProcessType::DryRun)
+        return;
+
+    std::vector<RawMidiMessage> result = Metadata::readAllMidiEvents(block.data);
+
+    const int64_t actualTimestamp = getFrameStartSample(block.block_id);
+    onMidi(actualTimestamp, std::move(result));
 }
 
 EProcessRet ReportFile::processOneBlock(ReadBlock& block, EProcessType processType, bool bStopAtEOF, int32_t& out_audioSamplesProcessed)
@@ -307,55 +424,10 @@ EProcessRet ReportFile::processOneBlock(ReadBlock& block, EProcessType processTy
             return EProcessRet::Stop;
         }
     }
-    else
-    {
-        auto& header = getHeader();
 
-        if (block.type == BlockType::AUDIOIN)
-        {
-            processAudioBlock(block, processType, blockOffset, header.in_channels, out_audioSamplesProcessed);
-        }
-        else if (block.type == BlockType::AUDIOOUT)
-        {
-            processAudioBlock(block, processType, blockOffset, header.out_channels, out_audioSamplesProcessed);
-        }
-        else if (block.type == BlockType::METADATA)
-        {
-            auto* data = block.data.data();
-            int remainingData = block.data.size();
-            size_t offset = 0;
+    dispatchBlock(block, processType, blockOffset, out_audioSamplesProcessed);
 
-            while (remainingData > 0)
-            {
-                uint32_t block_read = 0;
-                auto marker = AudioDebug::Metadata::readMarker(data + offset, block_read);
-
-                if (processType != EProcessType::DryRun)
-                {
-                    onMarker(std::move(marker));
-                }
-
-                remainingData -= block_read;
-                offset += block_read;
-            }
-        }
-        else if (block.type == BlockType::MIDI)
-        {
-            if (processType != EProcessType::DryRun)
-            {
-                std::vector<RawMidiMessage> result = Metadata::readAllMidiEvents(block.data);
-                int actualTimestamp = block.block_id * header.block_size;
-
-                onMidi(actualTimestamp, std::move(result));
-            }
-        }
-        else
-        {
-            processCustomBlock(block, processType, blockOffset);
-        }
-
-        return EProcessRet::Success;
-    }
+    return EProcessRet::Success;
 }
 
 
@@ -364,50 +436,7 @@ void ReportFile::simulateReadBlock(const ReadBlock& block, EProcessType processT
     uint64_t blockOffset = m_simulatedPos;
 
     int32_t unusedProcessedSamples = 0;
-    auto& header = getHeader();
-
-    if (block.type == BlockType::AUDIOIN)
-    {
-        processAudioBlock(block, processType, blockOffset, header.in_channels, unusedProcessedSamples);
-    }
-    else if (block.type == BlockType::AUDIOOUT)
-    {
-        processAudioBlock(block, processType, blockOffset, header.out_channels, unusedProcessedSamples);
-    }
-    else if (block.type == BlockType::METADATA)
-    {
-        auto* data = block.data.data();
-        int remainingData = block.data.size();
-        size_t offset = 0;
-
-        while (remainingData > 0)
-        {
-            uint32_t block_read = 0;
-            auto marker = AudioDebug::Metadata::readMarker(data + offset, block_read);
-
-            if (processType != EProcessType::DryRun)
-            {
-                onMarker(std::move(marker));
-            }
-
-            remainingData -= block_read;
-            offset += block_read;
-        }
-    }
-    else if (block.type == BlockType::MIDI)
-    {
-        if (processType != EProcessType::DryRun)
-        {
-            std::vector<RawMidiMessage> result = Metadata::readAllMidiEvents(block.data);
-            int actualTimestamp = block.block_id * header.block_size;
-
-            onMidi(actualTimestamp, std::move(result));
-        }
-    }
-    else
-    {
-        processCustomBlock(block, processType, blockOffset);
-    }
+    dispatchBlock(block, processType, blockOffset, unusedProcessedSamples);
 
     m_simulatedPos += sizeof(BlockHeader);
     m_simulatedPos += block.data.size();
@@ -415,7 +444,7 @@ void ReportFile::simulateReadBlock(const ReadBlock& block, EProcessType processT
 
 void ReportFile::processAudioBlock(const ReadBlock& block, EProcessType processType, uint64_t blockOffset, int numChannels, int32_t& out_audioSamplesProcessed)
 {
-    if (block.data.empty())
+    if (block.data.empty() || numChannels <= 0)
         return;
 
     assert(block.type == BlockType::AUDIOIN || block.type == BlockType::AUDIOOUT);
@@ -424,18 +453,24 @@ void ReportFile::processAudioBlock(const ReadBlock& block, EProcessType processT
     auto& blocks = bIsOut ? m_audioOutBlocks : m_audioInBlocks;
     const auto& header = getHeader();
 
-    int64_t startSample = state.samplesCount.load();
-
     auto samples = block.as_samples((EBitDepth)header.bit_depth);
 
-    int remainingSamples = samples.size();
-    const int numberOfSamplesPerBlock = remainingSamples / (numChannels);
+    int remainingSamples = static_cast<int>(samples.size());
+    const int numberOfSamplesPerBlock = remainingSamples / numChannels;
+
+    assert(!m_usesFrames
+        || m_currentFrameSamples.load() == 0
+        || static_cast<uint32_t>(numberOfSamplesPerBlock) == m_currentFrameSamples.load());
+
+    const int64_t startSample = m_usesFrames ? m_currentFrameStart.load()
+                                             : state.samplesCount.load();
+
+    state.ensureCapacity(numberOfSamplesPerBlock);
+
     auto it = samples.begin();
     int outSampleCount = 0;
 
-    assert(numberOfSamplesPerBlock <= state.m_tempBuffer[0].size());
-
-    while (remainingSamples > 0)
+    while (remainingSamples >= numChannels)
     {
         assert(it != samples.end());
 
@@ -466,14 +501,15 @@ void ReportFile::processAudioBlock(const ReadBlock& block, EProcessType processT
             for (int iChan = 0; iChan < numChannels; iChan++)
             {
                 float value = state.m_tempBuffer[iChan][outSampleCount];
-                onAudioBlock(globalChanId + iChan, value, startSample, state.m_tempBuffer[0].size());
+
+                onAudioBlock(globalChanId + iChan, value, startSample, numberOfSamplesPerBlock);
             }
         }
 
         outSampleCount++;
     }
 
-    while (outSampleCount < state.m_tempBuffer[0].size())
+    while (outSampleCount < static_cast<int>(state.m_tempBuffer[0].size()))
     {
         for (int iChan = 0; iChan < numChannels; iChan++)
         {
@@ -485,7 +521,6 @@ void ReportFile::processAudioBlock(const ReadBlock& block, EProcessType processT
 
     if (processType != EProcessType::DryRun)
     {
-        //addFileOffset(slot, startSample, blockOffset);
         {
             std::lock_guard<std::mutex> lock(m_mutex);
             blocks.push_back({ startSample, blockOffset });
@@ -506,10 +541,11 @@ bool ReportFile::processCustomBlock(const ReadBlock& block, EProcessType process
     {
         std::lock_guard<std::mutex> lock(m_mutex);
 
-        int64_t startSample = m_customBlockSamplescount.load();
+        const int64_t startSample = m_usesFrames ? m_currentFrameStart.load()
+                                                 : m_customBlockSamplescount.load();
 
         m_customBlocks.push_back({ startSample, blockOffset });
-        m_customBlockSamplescount.store(startSample + getHeader().block_size);
+        m_customBlockSamplescount.store(startSample + getFrameSampleCount());
     }
 
     return true;
@@ -558,12 +594,12 @@ void ReportFile::fillSampleCacheFromBlock(BlockType targetBlockType, int64_t sta
             if (block.type == targetBlockType)
             {
                 auto samples = block.as_samples((EBitDepth)header.bit_depth);
-                int remainingSamples = samples.size();
+                int remainingSamples = static_cast<int>(samples.size());
                 auto it = samples.begin();
 
                 int frameCount = 0;
 
-                while (remainingSamples > 0)
+                while (remainingSamples >= numChannels)
                 {
                     assert(it != samples.end());
 
@@ -632,6 +668,7 @@ bool isBlockValid(BlockType type)
 {
     switch (type)
     {
+    case BlockType::FRAME:
     case BlockType::AUDIOIN:
     case BlockType::AUDIOOUT:
     case BlockType::METADATA:
@@ -660,6 +697,12 @@ void writeFileHeader(std::ostream& os, const FileHeader& h)
         internalCount += sizeof(uint8_t);
     };
 
+    auto writeInt64 = [&](auto& val)
+    {
+        os.write(reinterpret_cast<const char*>(&val), sizeof(uint64_t));
+        internalCount += sizeof(uint64_t);
+    };
+
     writeInt(h.magic);
     writeInt(h.version);
     writeInt(h.sample_rate);
@@ -671,8 +714,7 @@ void writeFileHeader(std::ostream& os, const FileHeader& h)
     writeInt8(h.reserved1[0]);
     writeInt8(h.reserved1[1]);
     writeInt8(h.reserved1[2]);
-    writeInt(h.reserved2[0]);
-    writeInt(h.reserved2[1]);
+    writeInt64(h.total_samples);
 
     assert(internalCount == sizeof(FileHeader));
 }

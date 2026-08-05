@@ -168,7 +168,8 @@ private:
     void waitUntilWriterHasFinished_();
     void serviceFromMessageThread();
 
-    void sendBlockEnd();
+    void beginFrame(uint32_t numSamples);
+    void endFrame();
 
     static std::unique_ptr<AudioDebugger> m_singleton;
     static std::mutex m_mutex;
@@ -204,7 +205,7 @@ private:
 class ScopedDebugBlock
 {
 public:
-    ScopedDebugBlock();
+    ScopedDebugBlock(uint32_t numSamples);
     ~ScopedDebugBlock();
 
     ScopedDebugBlock(const ScopedDebugBlock&)            = delete;

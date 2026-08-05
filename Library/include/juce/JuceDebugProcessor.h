@@ -19,7 +19,7 @@ public:
 						 const juce::MidiBuffer& midiMessages,
 						 int numInputChannels,
 						 int numOutputChannels) noexcept
-		: m_block()
+		: m_block(buffer.getNumSamples())
 		, m_buffer(buffer)
 		, m_numInputChannels(numInputChannels)
 		, m_numOutputChannels(numOutputChannels)

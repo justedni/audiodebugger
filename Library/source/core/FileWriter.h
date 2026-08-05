@@ -29,6 +29,14 @@ public:
     bool start();
     void stop();
 
+    bool beginFrame(uint32_t numSamples) noexcept;
+    void endFrame() noexcept;
+
+    bool isFrameOpen() const noexcept { return m_frameOpen; }
+    uint32_t currentFrameId() const noexcept { return m_currentFrameId; }
+    uint32_t currentFrameSamples() const noexcept { return m_currentFrameSamples; }
+    int64_t nextFrameStartSample() const noexcept { return m_nextFrameStartSample; }
+
     BlockWriter beginBlock(BlockType type, uint32_t blockId) noexcept;
     bool writeAudioBlockDirect(BlockType type, uint32_t blockId, int numSamples, const std::function<void(SampleWriter&)>& f);
     bool writeBlock(BlockType type, uint32_t blockId, const std::vector<uint8_t>& data);
@@ -48,6 +56,8 @@ protected:
 private:
     void drainRemaining();
 
+    void ensureFrameForBlock(uint32_t blockId) noexcept;
+
     void writerLoop();
     void writeBlockToFile(const struct WriteBlock& block);
     void updateBlockCountInFile();
@@ -64,8 +74,16 @@ private:
 
     struct WriteBlock* m_openSlot = nullptr;
 
-    std::atomic<uint32_t> m_writtenAudioBlocksCount = 0;
-    uint32_t m_lastWrittenBlockCount = 0;
+    bool m_frameOpen = false;
+    uint32_t m_currentFrameId = 0;
+    uint32_t m_nextFrameId = 0;
+    uint32_t m_currentFrameSamples = 0;
+    int64_t m_nextFrameStartSample = 0;
+
+    std::atomic<uint32_t> m_writtenFramesCount = 0;
+    std::atomic<uint64_t> m_writtenSamplesCount = 0;
+    uint32_t m_lastWrittenFrameCount = 0;
+    uint64_t m_lastWrittenSampleCount = 0;
     bool m_pendingFlush = false;
 
     BlockAddedFunc m_blockAddedCallback;

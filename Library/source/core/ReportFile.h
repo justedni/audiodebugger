@@ -31,6 +31,15 @@ struct ChannelReaderState
         samplesCount.store(0);
     }
 
+    void ensureCapacity(int numSamples)
+    {
+        for (auto& chan : m_tempBuffer)
+        {
+            if (static_cast<int>(chan.size()) < numSamples)
+                chan.resize(numSamples);
+        }
+    }
+
     void resetCount()
     {
         samplesCount.store(0);
@@ -101,6 +110,11 @@ public:
     const std::vector<std::vector<float>>& getInTempBuffer() const;
     const std::vector<std::vector<float>>& getOutTempBuffer() const;
 
+    bool usesFrames() const { return m_usesFrames; }
+    uint32_t getFrameSampleCount() const;
+    int64_t getFrameStartSample(uint32_t blockId) const;
+    uint64_t getTotalSamples() const override;
+
     AudioBlockCallback onAudioBlock;
     MarkerCallback onMarker;
     MidiCallback onMidi;
@@ -108,6 +122,14 @@ public:
 private:
     void fillSampleCacheFromBlock(BlockType targetBlockType, int64_t startSample, int64_t numSamples, uint8_t numChannels, uint8_t outChanOffset, std::vector<SampleCache*> out_cache);
     void fixLegacyBitDepth();
+    void fixLegacyHeaderFields();
+    void resetFrameState();
+
+    void dispatchBlock(const ReadBlock& block, EProcessType processType, uint64_t blockOffset, int32_t& out_audioSamplesProcessed);
+
+    void processFrameBlock(const ReadBlock& block);
+    void processMetadataBlock(const ReadBlock& block, EProcessType processType);
+    void processMidiBlock(const ReadBlock& block, EProcessType processType);
 
     const EFileSlot m_slot;
     const std::string m_filePath;
@@ -125,6 +147,11 @@ private:
     std::unique_ptr<ChannelReaderState> m_chanStateIn;
     std::unique_ptr<ChannelReaderState> m_chanStateOut;
     std::atomic<int64_t> m_customBlockSamplescount;
+
+    bool m_usesFrames = false;
+    uint32_t m_currentFrameId = 0;
+    std::atomic<uint32_t> m_currentFrameSamples{ 0 };
+    std::atomic<int64_t> m_currentFrameStart{ 0 };
 };
 
 

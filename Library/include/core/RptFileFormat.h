@@ -3,9 +3,22 @@
 
 #pragma once
 
+#include <cstdint>
+#include <string>
+#include <vector>
+
 namespace AudioDebug {
 
 enum EBitDepth : uint8_t;
+
+enum ERptFileVersion : uint8_t
+{
+    Legacy = 1,
+    WithFrames = 2,
+    VERSION_COUNT
+};
+
+constexpr uint32_t kCurrentFormatVersion = ERptFileVersion::VERSION_COUNT - 1;
 
 enum class BlockType : uint32_t
 {
@@ -15,6 +28,7 @@ enum class BlockType : uint32_t
     METADATA = 0x4154454d,   // 'META'
     MIDI = 0x4944494d,   // 'MIDI'
     CUSTOM = 0x4d545343,   // 'CSTM'
+    FRAME = 0x454d5246,   // 'FRME'  (v2+)
 };
 
 bool isBlockValid(BlockType type);
@@ -36,16 +50,18 @@ __pragma(pack(pop))
 PACK(struct FileHeader
 {
     uint32_t magic = ARPT_MAGIC;
-    uint32_t version = 1;
+    uint32_t version = kCurrentFormatVersion;
     uint32_t sample_rate = 0;
     uint32_t block_size = 0;
     uint32_t blocks_count = 0;
     uint32_t in_channels = 0;
     uint32_t out_channels = 0;
     uint8_t bit_depth = 0;
-    uint8_t reserved1[3];
-    uint32_t reserved2[2];
+    uint8_t reserved1[3] = {};
+    uint64_t total_samples = 0;
 });
+static_assert(sizeof(FileHeader) == 40);
+
 
 PACK(struct BlockHeader
 {
@@ -54,6 +70,32 @@ PACK(struct BlockHeader
     uint32_t block_id = 0;
     uint32_t checksum = 0;
 });
+static_assert(sizeof(BlockHeader) == 16);
+
+
+PACK(struct FrameInfo
+{
+    uint32_t num_samples = 0;
+    uint32_t reserved = 0;
+    int64_t start_sample = 0;
+});
+static_assert(sizeof(FrameInfo) == 16);
+
+
+inline bool fileUsesFrames(const FileHeader& header) noexcept
+{
+    return (header.version >= ERptFileVersion::WithFrames);
+}
+
+inline bool readFrameInfo(const uint8_t* data, size_t size, FrameInfo& out_info) noexcept
+{
+    if (data == nullptr || size < sizeof(FrameInfo))
+        return false;
+
+    std::memcpy(&out_info, data, sizeof(FrameInfo));
+    return true;
+}
+
 
 struct ReadBlock
 {
@@ -99,6 +141,7 @@ public:
     virtual void seekTo(uint64_t offset) = 0;
     virtual bool readFileBlock(ReadBlock& out_block, uint32_t& out_blockSize) = 0;
     virtual bool findOffsetForCustomBlock(int64_t sampleNumber, uint64_t& out_offset, int64_t& out_blockStart) = 0;
+    virtual uint64_t getTotalSamples() const = 0;
 };
 
 } // namespace AudioDebug

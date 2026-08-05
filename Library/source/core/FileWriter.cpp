@@ -96,7 +96,7 @@ FileWriter::FileWriter(const std::string& filename, const FileHeader& header)
 {
     const uint32_t maxChannels = std::max(header.in_channels, header.out_channels);
     const size_t audioWorstCase = static_cast<size_t>(maxChannels)
-                                * static_cast<size_t>(header.block_size)
+                                * static_cast<size_t>(header.block_size) * 2
                                 * getBitSize(static_cast<EBitDepth>(header.bit_depth));
 
     m_maxBlockBytes = std::max(audioWorstCase, FileWriterConfig::maxBlockBytes);
@@ -117,9 +117,23 @@ bool FileWriter::start()
         return false;
     }
 
-    m_writtenAudioBlocksCount.store(0, std::memory_order_relaxed);
-    m_lastWrittenBlockCount = 0;
+    m_writtenFramesCount.store(0, std::memory_order_relaxed);
+    m_writtenSamplesCount.store(0, std::memory_order_relaxed);
+    m_lastWrittenFrameCount = 0;
+    m_lastWrittenSampleCount = 0;
     m_pendingFlush = false;
+
+    m_frameOpen = false;
+    m_currentFrameId = 0;
+    m_nextFrameId = 0;
+    m_currentFrameSamples = 0;
+    m_nextFrameStartSample = 0;
+
+    m_fileHeader.version = kCurrentFormatVersion;
+    m_fileHeader.reserved1[0] = 0;
+    m_fileHeader.reserved1[1] = 0;
+    m_fileHeader.blocks_count = 0;
+    m_fileHeader.total_samples = 0;
 
     writeFileHeader(m_file, m_fileHeader);
     m_file.flush();
@@ -138,6 +152,8 @@ void FileWriter::stop()
 
     drainRemaining();
 
+    m_frameOpen = false;
+
     if (m_file.is_open())
     {
         updateBlockCountInFile();
@@ -155,9 +171,60 @@ void FileWriter::drainRemaining()
     }
 }
 
+bool FileWriter::beginFrame(uint32_t numSamples) noexcept
+{
+    assert(m_openSlot == nullptr);
+    assert(numSamples > 0);
+
+    m_frameOpen = true;
+    m_currentFrameId = m_nextFrameId++;
+    m_currentFrameSamples = numSamples;
+
+    FrameInfo info;
+    info.num_samples = numSamples;
+    info.start_sample = m_nextFrameStartSample;
+
+    auto block = beginBlock(BlockType::FRAME, m_currentFrameId);
+    if (!block)
+    {
+        m_frameOpen = false;
+        return false;
+    }
+
+    if (!block.append(info) || !block.commit())
+    {
+        m_frameOpen = false;
+        return false;
+    }
+
+    m_nextFrameStartSample += static_cast<int64_t>(numSamples);
+    return true;
+}
+
+void FileWriter::endFrame() noexcept
+{
+    assert(m_openSlot == nullptr);
+    m_frameOpen = false;
+}
+
+void FileWriter::ensureFrameForBlock(uint32_t blockId) noexcept
+{
+    if (m_frameOpen && blockId == m_currentFrameId)
+        return;
+
+    assert(false);
+    beginFrame(m_fileHeader.block_size);
+}
+
 BlockWriter FileWriter::beginBlock(BlockType type, uint32_t blockId) noexcept
 {
     assert(m_openSlot == nullptr && "a BlockWriter is already open - commit it first");
+
+    if (type != BlockType::FRAME)
+    {
+        ensureFrameForBlock(blockId);
+        blockId = m_currentFrameId;
+    }
 
     auto* slot = m_queue->beginWrite();
     if (slot == nullptr)
@@ -240,6 +307,10 @@ bool FileWriter::writeAudioBlockDirect(BlockType type,
     if (!block)
         return false;
 
+    const bool bMatchesFrame = (m_currentFrameSamples == 0) || ((static_cast<uint32_t>(numSamples) % m_currentFrameSamples) == 0);
+    assert(bMatchesFrame && "sample count does not match the size declared to beginFrame()");
+    (void)bMatchesFrame;
+
     block.writeSamples(f);
     return block.commit();
 }
@@ -292,8 +363,21 @@ void FileWriter::writeBlockToFile(const WriteBlock& block)
     writeBlockHeader(m_file, header);
     m_file.write(reinterpret_cast<const char*>(block.data.data()), static_cast<std::streamsize>(block.dataSize));
 
-    if (block.type == BlockType::AUDIOOUT)
-        m_writtenAudioBlocksCount.fetch_add(1, std::memory_order_relaxed);
+    if (block.type == BlockType::FRAME)
+    {
+        FrameInfo info;
+        if (readFrameInfo(block.data.data(), block.dataSize, info))
+        {
+            m_writtenFramesCount.fetch_add(1, std::memory_order_relaxed);
+
+            const uint64_t endSample = static_cast<uint64_t>(info.start_sample) + info.num_samples;
+            m_writtenSamplesCount.store(endSample, std::memory_order_relaxed);
+        }
+        else
+        {
+            assert(false && "malformed FRAME block");
+        }
+    }
 
     m_pendingFlush = true;
 }
@@ -303,19 +387,29 @@ void FileWriter::updateBlockCountInFile()
     if (!m_file.is_open())
         return;
 
-    const uint32_t count = m_writtenAudioBlocksCount.load(std::memory_order_relaxed);
-    if (count == m_lastWrittenBlockCount)
+    const uint32_t frames = m_writtenFramesCount.load(std::memory_order_relaxed);
+    const uint64_t samples = m_writtenSamplesCount.load(std::memory_order_relaxed);
+
+    if (frames == m_lastWrittenFrameCount && samples == m_lastWrittenSampleCount)
         return;
 
-    m_fileHeader.blocks_count = count;
+    m_fileHeader.blocks_count = frames;
+    m_fileHeader.total_samples = samples;
 
     constexpr std::streamoff total_blocks_offset = offsetof(FileHeader, blocks_count);
+    constexpr std::streamoff total_samples_offset = offsetof(FileHeader, total_samples);
 
     const std::streampos end_pos = m_file.tellp();
+
     m_file.seekp(total_blocks_offset);
     m_file.write(reinterpret_cast<const char*>(&m_fileHeader.blocks_count), sizeof(uint32_t));
+
+    m_file.seekp(total_samples_offset);
+    m_file.write(reinterpret_cast<const char*>(&m_fileHeader.total_samples), sizeof(uint64_t));
+
     m_file.seekp(end_pos);
 
-    m_lastWrittenBlockCount = count;
+    m_lastWrittenFrameCount = frames;
+    m_lastWrittenSampleCount = samples;
 }
 } // namespace AudioDebug

@@ -9,8 +9,10 @@ set(CORE_INTERFACE
     include/core/AudioDebug.h
     include/core/BlockWriter.h
     include/core/DebugProcessor.h
+    include/core/DiffDetector.h
     include/core/RptFileFormat.h
     include/core/SampleWriter.h
+    include/core/UnitTests.h
 )
 
 set(CORE_SOURCE
@@ -18,12 +20,12 @@ set(CORE_SOURCE
     source/core/BlockWriter.cpp
     source/core/DebugProcessor.cpp
     source/core/DiffDetector.cpp
-    source/core/DiffDetector.h
     source/core/FileWriter.cpp
     source/core/FileWriter.h
     source/core/ReportFile.cpp
     source/core/ReportFile.h
     source/core/RingBuffer.h
+    source/core/UnitTests.cpp
 )
 
 add_library(AudioDebugCore STATIC)

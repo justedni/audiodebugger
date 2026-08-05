@@ -224,15 +224,12 @@ void AudioDebugger::prepare(DebugProcessor* processor)
 	if (!m_bIsRegenerating)
 	{
 		FileHeader header;
-		header.version = 1;
 		header.sample_rate = m_sampleRate;
 		header.block_size = m_maxSamplesPerBlock;
 
 		header.in_channels = m_numInputs;
 		header.out_channels = m_numOutputs;
 		header.bit_depth = m_bitDepth;
-
-		header.blocks_count = 0;
 
 		if (m_autoWriteOutputFile)
 		{
@@ -293,6 +290,11 @@ void AudioDebugger::setCaptureName(const std::string& fileName, bool bAppendDate
 void AudioDebugger::setBlockAddedCallback(BlockAddedFunc func)
 {
 	m_debugWriter->setBlockAddedCallback(func);
+}
+
+void AudioDebugger::beginFrame(uint32_t numSamples)
+{
+	m_debugWriter->beginFrame(numSamples);
 }
 
 void AudioDebugger::pushAllInputSamples(int numSamples, int numChannels, const float* const* buffer)
@@ -372,7 +374,7 @@ void AudioDebugger::flushAccumulator_(BlockAccumulator& accum)
 	}
 }
 
-void AudioDebugger::sendBlockEnd()
+void AudioDebugger::endFrame()
 {
 	if (!m_debugWriter)
 		return;
@@ -386,6 +388,8 @@ void AudioDebugger::sendBlockEnd()
 
 	flushAccumulator_(m_metadataAccum);
 	flushAccumulator_(m_customAccum);
+
+	m_debugWriter->endFrame();
 
 	m_debugBlockCount++;
 }
@@ -420,6 +424,7 @@ void AudioDebugger::startRegenerate(const FileHeader& header, std::string& out_g
 
 	FileHeader newHeader = FileHeader(header);
 	newHeader.blocks_count = 0;
+	newHeader.total_samples = 0;
 
 	m_numInputs = header.in_channels;
 	m_numOutputs = header.out_channels;
@@ -671,11 +676,13 @@ void addBufferStartMarker(BlockWriter& block, int timestamp)
 
 } // namespace Metadata
 
-ScopedDebugBlock::ScopedDebugBlock()
+ScopedDebugBlock::ScopedDebugBlock(uint32_t numSamples)
 {
 	m_debugger = AudioDebug::AudioDebugger::get();
 	if (m_debugger)
 	{
+		m_debugger->beginFrame(numSamples);
+
 		auto& metadataBlock = m_debugger->metadataBlock();
 		auto timestamp = m_debugger->getCurrentBufferTimestamp();
 		Metadata::addBufferStartMarker(metadataBlock, timestamp);
@@ -686,7 +693,7 @@ ScopedDebugBlock::~ScopedDebugBlock()
 {
 	if (m_debugger)
 	{
-		m_debugger->sendBlockEnd();
+		m_debugger->endFrame();
 	}
 }
 

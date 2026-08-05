@@ -158,7 +158,7 @@ bool WaveformOverview::openRptFile(const juce::String& filePath, double viewport
     }
     else
     {
-        totalSamples = header.blocks_count * header.block_size;
+        totalSamples = m_rptFile->getTotalSamples();
         sampleRate = header.sample_rate;
     }
 

@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Vincent Dortel
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-#include "DiffDetector.h"
+#include "core/DiffDetector.h"
 
 #include "core/AudioDebug.h"
 
