@@ -75,7 +75,7 @@ void SamplePluginProcessor::processBlockImpl(juce::AudioBuffer<float>& buffer, j
             {
                 int32_t pos = AudioDebug::AudioDebugger::get()->getCurrentBufferTimestamp() + (int32_t)std::round(msg.getTimeStamp());
                 auto& metadata = scope->raw().metadata();
-                constexpr char* text("NoteOn marker");
+                static constexpr const char* text = "NoteOn marker";
                 AudioDebug::Metadata::addMarkerText(metadata, pos, 0, 0, 0, text, strlen(text));
             }
         }

@@ -15,13 +15,18 @@ class AutoConnectButton;
 struct Marker;
 
 struct FileHeader;
+struct SampleCache;
 class ReportFile;
 
 class WaveformOverview;
 struct MarkerPair;
 
 class MainComponent;
+class ChannelList;
 class ChannelComponent;
+class CollapsibleChannel;
+class MidiTrackComponent;
+class DiffTrackComponent;
 class OverlayComponent;
 class DiffDetector;
 class MipmapBuilder;
@@ -63,17 +68,21 @@ public:
     AudioDebuggerUI(DebugProcessor* processor);
     virtual ~AudioDebuggerUI();
 
-    // Virtual interface (customizable)
-    virtual void paintUICustom(juce::Graphics& g) {}
+    virtual void paintTrackCustom(juce::Graphics& g, ChannelComponent& track) {}
+    virtual void paintOverlayCustom(juce::Graphics& g) {}
     virtual void paintCustomMarkers(juce::Graphics& g, const std::vector<MarkerPair>& markers) {}
+
+    virtual void onChannelLayoutChanged() {}
+
     virtual void updateControlPanelValues() {}
     virtual void controlPanelResized(int x, int y, int width) {}
     virtual void setSliderFromDebugPanel(uint8_t id, float value) {}
     virtual void setButtonFromDebugPanel(uint8_t id, bool bEnabled) {}
     virtual void invalidateCustomCache_() {}
-    virtual void refreshChannelBounds();
     virtual juce::Colour getWaveformColour(uint8_t channelId) const;
     virtual juce::String getSampleValueString(float value, uint8_t bitDepth) const;
+
+    void refreshChannelBounds();
 
     // ------------------------------
     void initialize();
@@ -105,6 +114,7 @@ public:
     void mouseDrag(const juce::MouseEvent& e) override;
     void mouseWheelMove(const juce::MouseEvent& event, const juce::MouseWheelDetails& wheel) override;
     void mouseDown(const juce::MouseEvent& event) override;
+    void mouseUp(const juce::MouseEvent& event) override;
     void mouseExit(const juce::MouseEvent& e) override;
 
     void setNewStartSample(int64_t newStartSample);
@@ -142,12 +152,8 @@ public:
 
     int64_t getViewportStartSample() const { return viewportStartSample; }
     int64_t getViewportLengthSamples() const { return viewportLengthSamples; }
-    double getVerticalZoom() const { return zoomVSlider->getValue(); }
+    double getGlobalVerticalZoom() const { return zoomVSlider->getValue(); }
     double getSamplesPerPixel() const { return viewportLengthSamples / (double)getWidth(); }
-    const std::vector<float>* getCachedSamplesForChannel(int chanId) const;
-    uint8_t getBitDepth() const { return sampleCache.bitDepth; }
-    int64_t getCacheStartSample() const { return sampleCache.startSample; }
-    juce::CriticalSection& getCacheLock() const { return cacheLock; }
     uint8_t getNumInputs() const { return m_numInputs; }
     uint8_t getNumOutputs() const { return m_numOutputs; }
     int64_t getHighlightedDiff() const { return highlightedDiff; }
@@ -192,46 +198,37 @@ protected:
     }
 
 
-    struct ChannelBounds {
-        float minValue = 0.0f;
-        float maxValue = 0.0f;
-        float middle = 0.0f;
-        float metaY = 0.0f;
-    };
-
-    struct ChannelData
-    {
-        std::vector<ChannelBounds> bounds;
-        float channelHeight;
-        float metadataHeight;
-    };
-
-    ChannelData m_chanBounds;
-
-    int getChannelHeight() const;
 public:
-    const ChannelData& getChannelData() const { return m_chanBounds; }
+    int getTotalChannels() const { return m_numInputs + m_numOutputs * 2; }
 
-    struct SampleCache
-    {
-        int64_t startSample;
-        int64_t numSamples;
-        uint8_t bitDepth = 0;
-        std::vector<std::vector<float>> samples; // Per-channel
+    int getInputChanId (int index) const { return index; }
+    int getOutputChanId(int index) const { return m_numInputs + index; }
+    int getRegenChanId (int index) const { return m_numInputs + m_numOutputs + index; }
 
-        bool contains(int64_t sample) const {
-            return sample >= startSample && sample < (startSample + numSamples);
-        }
+    bool isRegenChanId(int globalChanId) const { return globalChanId >= m_numInputs + m_numOutputs; }
+    int chanIdToOutputIndex(int globalChanId) const;
 
-        bool isValid() const {
-            return numSamples > 0 && !samples.empty();
-        }
+    ChannelComponent* getChannel(int globalChanId) const;
 
-        void clear() {
-            samples.clear();
-            numSamples = 0;
-        }
-    };
+    const SampleCache* getSampleCache(int globalChanId) const;
+    const juce::CriticalSection* getSampleCacheLock(int globalChanId) const;
+
+    CollapsibleChannel* getCollapsibleChannel(int globalChanId) const;
+    bool isChannelExpanded(int globalChanId) const;
+
+    juce::Rectangle<int> getChannelArea(int globalChanId) const;
+    juce::Rectangle<int> getChannelHeaderArea(int globalChanId) const;
+    float getChannelCentreY(int globalChanId) const;
+
+    void setTrackHeight(int heightPx);
+    int getTrackHeight() const { return m_trackHeight; }
+
+    static constexpr int MIN_TRACK_HEIGHT = 40;
+    static constexpr int MAX_TRACK_HEIGHT = 400;
+    static constexpr int DEFAULT_TRACK_HEIGHT = 120;
+
+    void channelLayoutChanged();
+    void ensureSampleCache();
 
     double getMaxZoom() const { return MAX_ZOOM; }
     void setZoomLevel(double newZoom);
@@ -245,7 +242,6 @@ protected:
     void setGenerationButtonsEnabled(bool bEnable);
 
     void updateVisibleRange();
-    void updateSampleCache_();
 
     int64_t calculateViewportLength(double zoom) const;
     double calculateZoomFromViewportLength(int64_t viewportLength) const;
@@ -256,9 +252,6 @@ protected:
     static constexpr double RAW_SAMPLE_THRESHOLD = 16.0;
 
     std::unique_ptr<WaveformOverview> overview;
-
-    mutable juce::CriticalSection cacheLock;
-    SampleCache sampleCache;
 
     bool m_isLoading = false;
     double zoomLevel = 0.0;
@@ -280,10 +273,19 @@ protected:
     MainComponent* m_parentComponent = nullptr;
 
     std::vector<std::unique_ptr<ChannelComponent>> m_channels;
+    std::unique_ptr<MidiTrackComponent> m_midiTrack;
+    std::unique_ptr<DiffTrackComponent> m_diffTrack;
+
+    int m_trackHeight = DEFAULT_TRACK_HEIGHT;
+
+    std::unique_ptr<ChannelList> m_channelList;
+    std::unique_ptr<juce::Viewport> m_viewport;
     std::unique_ptr<OverlayComponent> m_overlay;
 
     friend class ChannelComponent;
     friend class OverlayComponent;
+    friend class MidiTrackComponent;
+    friend class DiffTrackComponent;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AudioDebuggerUI)
 };

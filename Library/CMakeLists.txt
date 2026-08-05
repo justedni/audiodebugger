@@ -36,9 +36,13 @@ set(JUCE_SOURCE
     source/juce/ControlPanel.h
     source/juce/CustomSlider.cpp
     source/juce/DebuggerSpawner.cpp
+    source/juce/DiffTrackComponent.cpp
+    source/juce/DiffTrackComponent.h
     source/juce/JuceDebugProcessor.cpp
     source/juce/MarkerStore.cpp
     source/juce/MarkerStore.h
+    source/juce/MidiTrackComponent.cpp
+    source/juce/MidiTrackComponent.h
     source/juce/MipmapBuilder.cpp
     source/juce/MipmapBuilder.h
     source/juce/Mipmaps.cpp

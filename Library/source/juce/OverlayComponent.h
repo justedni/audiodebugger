@@ -19,13 +19,9 @@ public:
     void paint(juce::Graphics& g) override;
 
 private:
-    void paintWaveformSeparators(juce::Graphics& g);
-
     void paintMarkers(juce::Graphics& g);
-    void paintMidiMessages(juce::Graphics& g);
 
-    void paintMipmapDifferences(juce::Graphics& g);
-    void paintDetailedDifferences(juce::Graphics& g);
+    void paintStatusText(juce::Graphics& g);
 
     AudioDebuggerUI& m_debugger;
 

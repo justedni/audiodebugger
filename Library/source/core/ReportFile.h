@@ -49,6 +49,27 @@ using MidiCallback = std::function<void(int64_t timestamp, std::vector<RawMidiMe
 
 enum EProcessRet : uint8_t { Success, Sleep, Stop };
 
+
+struct SampleCache
+{
+    int64_t startSample;
+    int64_t numSamples;
+    std::vector<float> samples;
+
+    bool contains(int64_t sample) const {
+        return sample >= startSample && sample < (startSample + numSamples);
+    }
+
+    bool isValid() const {
+        return numSamples > 0 && !samples.empty();
+    }
+
+    void clear() {
+        samples.clear();
+        numSamples = 0;
+    }
+};
+
 class ReportFile
 {
 public:
@@ -86,7 +107,8 @@ public:
     void simulateReadBlock(const ReadBlock& block, EProcessType processType);
 
     void processAudioBlock(const ReadBlock& block, EProcessType processType, uint64_t blockOffset, int numChannels, int32_t& out_audioSamplesProcessed);
-    void findSamplesFromBlock(BlockType targetBlockType, int64_t startSample, int64_t numSamples, uint8_t numChannels, uint8_t outChanOffset, std::vector<std::vector<float>>& outSamples);
+
+    void fillSampleCache(int64_t startSample, int64_t numSamples, std::vector<SampleCache*> out_cache);
 
     bool findOffsetForCustomBlock(int64_t sampleNumber, uint64_t& out_offset, int64_t& out_blockStart);
     bool findOffsetForSample(const std::vector<BlockEntry>& blocks, int64_t sampleNumber, uint64_t& out_offset, int64_t& out_blockStart);
@@ -104,6 +126,7 @@ public:
     MidiCallback onMidi;
 
 private:
+    void fillSampleCacheFromBlock(BlockType targetBlockType, int64_t startSample, int64_t numSamples, uint8_t numChannels, uint8_t outChanOffset, std::vector<SampleCache*> out_cache);
     void fixLegacyBitDepth();
 
     const EFileSlot m_slot;

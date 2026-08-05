@@ -12,6 +12,7 @@
 #include "core/DiffDetector.h"
 #include "juce/MarkerStore.h"
 #include "juce/MipmapBuilder.h"
+#include "juce/ChannelComponent.h"
 
 namespace AudioDebug {
 
@@ -566,31 +567,55 @@ void WaveformOverview::generateMipmapLevelsInBackground()
     m_loadingProgress = 100;
 }
 
-bool WaveformOverview::getSamplesFromFile(int64_t startSample, int64_t numSamples, std::vector<std::vector<float>>& outSamples)
+void WaveformOverview::updateSampleCache(int64_t viewportStartSample, int64_t viewportLengthSamples, std::vector<std::unique_ptr<ChannelComponent>>& channels)
 {
-    if (startSample < 0 || startSample >= totalSamples)
-        return false;
+    int64_t padding = viewportLengthSamples / 4;
+    int64_t cacheStart = std::max((int64_t)0, viewportStartSample - padding);
+    int64_t totalSamples = getTotalSamples();
+    int64_t cacheEnd = std::min(totalSamples, viewportStartSample + viewportLengthSamples + padding);
+    int64_t numSamples = cacheEnd - cacheStart;
 
-    numSamples = std::min(numSamples, totalSamples - startSample);
+    int64_t startSample = cacheStart;
 
-    const auto& header = m_rptFile->getHeader();
+    if (channels.empty() || !channels[0]->checkCacheUpdateRequired(viewportStartSample, viewportLengthSamples))
+        return;
 
-    int totalChannels = header.in_channels + (header.out_channels * 2);
-    outSamples.resize(totalChannels);
-    for (int ch = 0; ch < totalChannels; ++ch)
+    if (startSample >= 0 && startSample < totalSamples)
     {
-        outSamples[ch].resize((size_t)numSamples);
+        numSamples = std::min(numSamples, totalSamples - startSample);
+
+        const auto& header = m_rptFile->getHeader();
+
+        for (auto& channel : channels)
+        {
+            channel->prepareCacheUpdateIfRequired(viewportStartSample, viewportLengthSamples, cacheStart, numSamples);
+            channel->lockCache();
+        }
+
+        std::vector<SampleCache*> rptCache;
+        std::vector<SampleCache*> genCache;
+
+        int totalChannels = channels.size();
+        for (int i = 0; i < totalChannels; i++) 
+        {
+            auto* cache = channels[i]->getSampleCache();
+            if (i < header.in_channels + header.out_channels)
+                rptCache.push_back(cache);
+            else
+                genCache.push_back(cache);
+        }
+
+        m_rptFile->fillSampleCache(startSample, numSamples, rptCache);
+
+        if (m_genFile)
+            m_genFile->fillSampleCache(startSample, numSamples, genCache);
+
+        for (auto& channel : channels)
+        {
+            channel->prepareCacheUpdateIfRequired(viewportStartSample, viewportLengthSamples, cacheStart, numSamples);
+            channel->unlockCache();
+        }
     }
-
-    m_rptFile->findSamplesFromBlock(BlockType::AUDIOIN, startSample, numSamples, header.in_channels, 0, outSamples);
-    m_rptFile->findSamplesFromBlock(BlockType::AUDIOOUT, startSample, numSamples, header.out_channels, header.in_channels, outSamples);
-
-    const uint8_t outChanOffset = header.in_channels + header.out_channels;
-
-    if (m_genFile)
-        m_genFile->findSamplesFromBlock(BlockType::AUDIOOUT, startSample,  numSamples, header.out_channels, outChanOffset, outSamples);
-
-    return true;
 }
 
 } // namespace AudioDebug

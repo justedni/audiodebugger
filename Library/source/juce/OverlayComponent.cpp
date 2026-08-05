@@ -6,7 +6,6 @@
 #include "juce/AudioDebuggerUI.h"
 #include "juce/WaveformOverview.h"
 
-#include "core/DiffDetector.h"
 #include "juce/MarkerStore.h"
 
 #include <juce_audio_basics/juce_audio_basics.h>
@@ -25,149 +24,54 @@ OverlayComponent::~OverlayComponent() = default;
 void OverlayComponent::paint(juce::Graphics& g)
 {
     if (!m_debugger.getOverview() || m_debugger.getViewportLengthSamples() <= 0)
+    {
+        paintStatusText(g);
         return;
-
-    paintMipmapDifferences(g);
-
-    paintWaveformSeparators(g);
-
-    m_debugger.paintUICustom(g);
+    }
 
     paintMarkers(g);
-    paintMidiMessages(g);
+
+    m_debugger.paintOverlayCustom(g);
+
+    paintStatusText(g);
 }
 
-void OverlayComponent::paintWaveformSeparators(juce::Graphics& g)
+void OverlayComponent::paintStatusText(juce::Graphics& g)
 {
-    const auto& chanData = m_debugger.getChannelData();
-    const int totalChannels = m_debugger.getNumInputs() + m_debugger.getNumOutputs() * 2;
+    auto* lnf = &m_debugger.getLookAndFeel();
 
-    g.setColour(juce::Colours::grey);
-    for (int i = 0; i < totalChannels; ++i)
+    if (!m_debugger.getOverview())
     {
-        const auto& b = chanData.bounds[i];
-        g.drawHorizontalLine((int)b.maxValue, 0.0f, (float)getWidth());
+        g.setColour(lnf->findColour(AudioDebuggerLookAndFeel::markerLabelColourId));
+        g.drawText("No audio file loaded", getLocalBounds(), juce::Justification::centred);
+        return;
     }
+
+    if (!m_debugger.isLoadingFile())
+        return;
+
+    auto currentFont = g.getCurrentFont();
+    g.setFont(juce::Font(24.0f));
+
+    const juce::String progressText =
+        juce::String(m_debugger.getOverview()->getLoadingProgress()) + "% - Generating waveform...";
+
+    const int textWidth  = g.getCurrentFont().getStringWidth(progressText);
+    const int textHeight = (int)g.getCurrentFont().getHeight();
+
+    juce::Rectangle<int> textBounds((getWidth() - textWidth) / 2 - 10,
+                                    (getHeight() - textHeight) / 2 - 10,
+                                    textWidth + 20,
+                                    textHeight + 20);
+
+    g.setColour(juce::Colours::black);
+    g.fillRect(textBounds);
+
+    g.setColour(juce::Colours::white);
+    g.drawText(progressText, getLocalBounds().reduced(10), juce::Justification::centred);
+
+    g.setFont(currentFont);
 }
-
-void OverlayComponent::paintMipmapDifferences(juce::Graphics& g)
-{
-    auto* diffDetector = m_debugger.getDiffDetector();
-    if (!diffDetector)
-        return;
-
-    const int64_t viewportStartSample = m_debugger.getViewportStartSample();
-    const int64_t viewportLengthSamples = m_debugger.getViewportLengthSamples();
-
-    auto differences = diffDetector->getInRange(viewportStartSample, viewportStartSample + viewportLengthSamples);
-
-    if (differences.empty())
-        return;
-
-    int totalDiffSamples = 0;
-
-    const auto& chanData = m_debugger.getChannelData();
-    const uint8_t numInputs = m_debugger.getNumInputs();
-    const uint8_t numOutputs = m_debugger.getNumOutputs();
-
-    const float channelHeight = chanData.channelHeight;
-    const auto& refBounds = chanData.bounds[numInputs + numOutputs];
-    const float height = chanData.metadataHeight / 2;
-
-    for (const auto& diff : differences)
-    {
-        float startX = (float)((diff.startSample - viewportStartSample) / (double)viewportLengthSamples * getWidth());
-        float endX = (float)((diff.endSample + 1 - viewportStartSample) / (double)viewportLengthSamples * getWidth());
-
-        if (endX - startX < 2.0f) {
-            endX = startX + 2.0f;
-        }
-
-        startX = std::max(0.0f, startX);
-        endX = std::min((float)getWidth(), endX);
-
-        const float alpha = 0.3f + (0.5f * std::min(1.0f, diff.maxDifference * 10.0f));
-        const float startY = refBounds.metaY + (diff.channel * height);
-
-        g.setColour(juce::Colours::orange.withAlpha(alpha));
-        g.fillRect(startX, startY, endX - startX, height);
-
-        totalDiffSamples += (int)(diff.endSample - diff.startSample + 1);
-    }
-
-    int64_t diffCount = 0;
-    for (auto& diff : differences) {
-        diffCount += (diff.endSample - diff.startSample + 1);
-    }
-
-    if (totalDiffSamples > 0)
-    {
-        g.setColour(juce::Colours::orange);
-        g.setFont(juce::Font(11.0f, juce::Font::bold));
-        g.drawText(juce::String(totalDiffSamples) + " differences",
-            10, refBounds.metaY, 200, 20,
-            juce::Justification::left);
-    }
-}
-
-void OverlayComponent::paintDetailedDifferences(juce::Graphics& g)
-{
-    auto* diffDetector = m_debugger.getDiffDetector();
-    if (!diffDetector)
-        return;
-
-    const int64_t viewportStartSample = m_debugger.getViewportStartSample();
-    const int64_t viewportLengthSamples = m_debugger.getViewportLengthSamples();
-
-    auto differences = diffDetector->getInRange(viewportStartSample, viewportStartSample + viewportLengthSamples);
-
-    if (differences.empty())
-        return;
-
-    const auto& chanData = m_debugger.getChannelData();
-    const float channelHeight = chanData.channelHeight;
-    const uint8_t numInputs = m_debugger.getNumInputs();
-    const uint8_t numOutputs = m_debugger.getNumOutputs();
-
-    const float height = chanData.metadataHeight / 2;
-    const float sampleWidth = std::max(2.0f, (1.0f / viewportLengthSamples * getWidth()));
-    const int64_t highlightedDiff = m_debugger.getHighlightedDiff();
-
-    int totalDiffSamples = 0;
-    for (const auto& diff : differences)
-    {
-        const auto& outBounds = chanData.bounds[numInputs + diff.channel];
-        const auto& reftBounds = chanData.bounds[numInputs + numOutputs + diff.channel];
-
-        for (int64_t sample = diff.startSample; sample <= diff.endSample; ++sample)
-        {
-            if (sample < viewportStartSample || sample > viewportStartSample + viewportLengthSamples)
-                continue;
-
-            float x = (float)((sample - viewportStartSample) / (double)viewportLengthSamples * getWidth());
-
-            auto colour = juce::Colours::orange;
-            if (highlightedDiff >= diff.startSample && highlightedDiff <= diff.endSample)
-                colour = juce::Colours::red;
-
-            g.setColour(colour.withAlpha(0.5f));
-            g.fillRect(x, outBounds.minValue, sampleWidth, channelHeight);
-            g.fillRect(x, reftBounds.minValue, sampleWidth, channelHeight);
-        }
-
-        totalDiffSamples += (int)(diff.endSample - diff.startSample + 1);
-    }
-
-    g.setColour(juce::Colours::orange);
-    g.setFont(juce::Font(11.0f, juce::Font::bold));
-
-    const auto& refBounds = chanData.bounds[numInputs + numOutputs];
-
-    g.drawText(juce::String(totalDiffSamples) + " differences",
-        10, refBounds.metaY, 200, 20,
-        juce::Justification::left);
-}
-
 
 void OverlayComponent::paintMarkers(juce::Graphics& g)
 {
@@ -189,10 +93,7 @@ void OverlayComponent::paintMarkers(juce::Graphics& g)
     double samplesPerPixel = viewportLengthSamples / (double)getWidth();
     int64_t minSampleSpacing = (int64_t)(MIN_MARKER_SPACING_PIXELS * samplesPerPixel);
 
-    const auto& chanData = m_debugger.getChannelData();
-    const float channelHeight = chanData.channelHeight;
     const uint8_t numInputs = m_debugger.getNumInputs();
-    const uint8_t numOutputs = m_debugger.getNumOutputs();
 
     std::vector<MarkerPair> startMarkers;
     std::vector<MarkerPair> regularMarkers;
@@ -317,14 +218,21 @@ void OverlayComponent::paintMarkers(juce::Graphics& g)
 
                     auto groupColor = m_debugger.colorIdToJuceColour(colour);
 
-                    const auto& chanBounds = chanData.bounds[chanId];
-                    const float lineStart = chanBounds.minValue;
+                    const auto chanArea = m_debugger.getChannelArea(chanId);
+                    if (chanArea.isEmpty())
+                        continue;
+
+                    const float lineStart = (float)chanArea.getY();
 
                     switch (group[0]->main.paintType)
                     {
                     case EMarkerPaintType::FullLine:
                     {
-                        const float lineEnd = lineStart  + chanData.bounds[chanId + 1].maxValue - chanBounds.minValue;
+                        float lineEnd = (float)chanArea.getBottom();
+
+                        const auto nextArea = m_debugger.getChannelArea(chanId + 1);
+                        if (!nextArea.isEmpty() && nextArea.getBottom() > chanArea.getBottom())
+                            lineEnd = (float)nextArea.getBottom();
 
                         g.setColour(groupColor);
                         g.drawLine(x, lineStart, x, lineEnd, 2.0f);
@@ -368,7 +276,7 @@ void OverlayComponent::paintMarkers(juce::Graphics& g)
                             int labelWidth = g.getCurrentFont().getStringWidth(label) + 8;
                             int labelHeight = 16;
 
-                            juce::Rectangle<int> labelBounds((int)x + 3, lineStart + labelY, labelWidth, labelHeight);
+                            juce::Rectangle<int> labelBounds((int)x + 3, (int)(lineStart + labelY), labelWidth, labelHeight);
 
                             g.setColour(lnf->findColour(AudioDebuggerLookAndFeel::markerOutlineColourId).withAlpha(0.7f));
                             g.fillRect(labelBounds);
@@ -385,7 +293,17 @@ void OverlayComponent::paintMarkers(juce::Graphics& g)
                     }
                 }
 
-                const float lastInputY = chanData.bounds[numInputs - 1].maxValue;
+                float lastInputY = 0.0f;
+                for (int i = (int)numInputs - 1; i >= 0; --i)
+                {
+                    const auto area = m_debugger.getChannelArea(m_debugger.getInputChanId(i));
+                    if (!area.isEmpty())
+                    {
+                        lastInputY = (float)area.getBottom();
+                        break;
+                    }
+                }
+
                 for (auto& timestamp : timestamps)
                 {
                     float x = (float)((timestamp - viewportStartSample) / (double)viewportLengthSamples * getWidth());
@@ -423,45 +341,6 @@ void OverlayComponent::paintMarkers(juce::Graphics& g)
     }
 
     m_debugger.paintCustomMarkers(g, customMarkers);
-}
-
-void OverlayComponent::paintMidiMessages(juce::Graphics& g)
-{
-    auto* overview = m_debugger.getOverview();
-    if (!overview)
-        return;
-
-    const int64_t viewportStartSample = m_debugger.getViewportStartSample();
-    const int64_t viewportLengthSamples = m_debugger.getViewportLengthSamples();
-
-    auto timestamps = overview->getMarkers()->getAllMidi();
-
-    for (auto& [timestamp, messages] : timestamps)
-    {
-        for (auto& msg : messages)
-        {
-            auto juceMsg = juce::MidiMessage(msg.data, static_cast<int>(msg.dataSize));
-
-            if (juceMsg.isNoteOn() || juceMsg.isNoteOff())
-            {
-                int absPosition = timestamp + msg.position;
-                float x = (float)((absPosition - viewportStartSample) / (double)viewportLengthSamples * getWidth());
-
-                g.setColour(juce::Colours::red);
-                g.drawRect(x, 0.0f, 100.0f, 20.0f);
-
-                juce::String txt;
-
-                if (juceMsg.isNoteOn())
-                    txt = juce::String::formatted("NoteOn %d Vel=%d", juceMsg.getNoteNumber(), juceMsg.getVelocity());
-                else if (juceMsg.isNoteOff())
-                    txt = juce::String::formatted("NoteOff %d", juceMsg.getNoteNumber());
-
-                int textWidth = g.getCurrentFont().getStringWidth(txt);
-                g.drawText(txt, x, 0.0f, textWidth, 20, juce::Justification::centredLeft);
-            }
-        }
-    }
 }
 
 } // namespace AudioDebug

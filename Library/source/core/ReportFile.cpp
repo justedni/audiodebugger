@@ -520,7 +520,7 @@ std::vector<int32_t> ReportFile::as_samples(const ReadBlock& block) const
     return block.as_samples((EBitDepth)getHeader().bit_depth);
 }
 
-void ReportFile::findSamplesFromBlock(BlockType targetBlockType, int64_t startSample, int64_t numSamples, uint8_t numChannels, uint8_t outChanOffset, std::vector<std::vector<float>>& outSamples)
+void ReportFile::fillSampleCacheFromBlock(BlockType targetBlockType, int64_t startSample, int64_t numSamples, uint8_t numChannels, uint8_t outChanOffset, std::vector<SampleCache*> out_cache)
 {
     uint64_t out_fileOffset = 0;
     int64_t out_blockStart = 0;
@@ -576,7 +576,7 @@ void ReportFile::findSamplesFromBlock(BlockType targetBlockType, int64_t startSa
                         int outChan = chan + outChanOffset;
 
                         if (bAddSamples)
-                            outSamples[outChan][outputOffset] = sample;
+                            out_cache[outChan]->samples[outputOffset] = sample;
 
                         it++;
                         remainingSamples--;
@@ -597,6 +597,19 @@ void ReportFile::findSamplesFromBlock(BlockType targetBlockType, int64_t startSa
                 bFirstBlock = false;
             }
         }
+    }
+}
+
+void ReportFile::fillSampleCache(int64_t startSample, int64_t numSamples, std::vector<SampleCache*> out_cache)
+{
+    if (m_slot == EFileSlot::Rpt)
+    {
+        fillSampleCacheFromBlock(BlockType::AUDIOIN, startSample, numSamples, m_header.in_channels, 0, out_cache);
+        fillSampleCacheFromBlock(BlockType::AUDIOOUT, startSample, numSamples, m_header.out_channels, m_header.in_channels, out_cache);
+    }
+    else if (m_slot == EFileSlot::Gen)
+    {
+        fillSampleCacheFromBlock(BlockType::AUDIOOUT, startSample, numSamples, m_header.out_channels, 0, out_cache);
     }
 }
 

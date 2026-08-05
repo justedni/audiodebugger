@@ -27,6 +27,7 @@ class DebugProcessor;
 class DiffDetector;
 class MipmapBuilder;
 class MarkerStore;
+class ChannelComponent;
 
 class WaveformOverview
 {
@@ -47,7 +48,7 @@ public:
     void openGenFile(const juce::String& filePath);
     void reopenSameGenFile();
 
-    bool getSamplesFromFile(int64_t startSample, int64_t numSamples, std::vector<std::vector<float>>& outSamples);
+    void updateSampleCache(int64_t viewportStartSample, int64_t viewportLengthSamples, std::vector<std::unique_ptr<ChannelComponent>>& channels);
 
     bool isLoading() const { return m_bIsLoading.load(); }
     uint8_t getLoadingProgress() const { return m_loadingProgress.load(); }

@@ -16,6 +16,8 @@
 #include "juce/WaveformOverview.h"
 #include "juce/ChannelComponent.h"
 #include "juce/OverlayComponent.h"
+#include "juce/MidiTrackComponent.h"
+#include "juce/DiffTrackComponent.h"
 
 #include <assert.h>
 
@@ -235,6 +237,21 @@ public:
         m_zoomText.setJustificationType(juce::Justification::centredLeft);
         m_zoomText.setText("------", juce::dontSendNotification);
 
+        addAndMakeVisible(m_trackHeightLabel);
+        m_trackHeightLabel.setFont(juce::Font(14.0f, juce::Font::bold));
+        m_trackHeightLabel.setJustificationType(juce::Justification::centredRight);
+        m_trackHeightLabel.setText("Track H:", juce::dontSendNotification);
+
+        addAndMakeVisible(m_trackHeightSlider);
+        m_trackHeightSlider.setRange((double)AudioDebuggerUI::MIN_TRACK_HEIGHT,
+                                     (double)AudioDebuggerUI::MAX_TRACK_HEIGHT, 5.0);
+        m_trackHeightSlider.setValue((double)audioDebugger->getTrackHeight(), juce::dontSendNotification);
+        m_trackHeightSlider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 40, 20);
+        m_trackHeightSlider.onValueChange = [this]
+        {
+            m_audioDebugger->setTrackHeight((int)std::round(m_trackHeightSlider.getValue()));
+        };
+
         addAndMakeVisible(m_diffThresholdLabel);
         m_diffThresholdLabel.setFont(juce::Font(14.0f, juce::Font::bold));
         m_diffThresholdLabel.setText("Diff - Threshold:", juce::dontSendNotification);
@@ -308,8 +325,11 @@ public:
 
         m_zoomLabel.setBounds(bottomBarBounds.removeFromLeft(56));
         zoomSlider->setBounds(bottomBarBounds.removeFromLeft(300));
-        m_zoomText.setBounds(bottomBarBounds.removeFromLeft(450));
-        bottomBarBounds.removeFromLeft(50);
+        m_zoomText.setBounds(bottomBarBounds.removeFromLeft(340));
+        bottomBarBounds.removeFromLeft(20);
+        m_trackHeightLabel.setBounds(bottomBarBounds.removeFromLeft(60));
+        m_trackHeightSlider.setBounds(bottomBarBounds.removeFromLeft(130));
+        bottomBarBounds.removeFromLeft(30);
         m_diffThresholdLabel.setBounds(bottomBarBounds.removeFromLeft(100));
         m_diffThresholdSlider.setBounds(bottomBarBounds.removeFromLeft(100));
         m_diffMode.setBounds(bottomBarBounds.removeFromLeft(80));
@@ -437,6 +457,9 @@ private:
     juce::Label m_sampleRateLabel;
     juce::Label m_sampleIdLabel;
 
+    juce::Label m_trackHeightLabel;
+    juce::Slider m_trackHeightSlider;
+
     juce::Label m_diffThresholdLabel;
     juce::Slider m_diffThresholdSlider;
     juce::ComboBox m_diffMode;
@@ -446,6 +469,135 @@ private:
 
     std::unique_ptr<juce::ScrollBar> m_scrollbar;
     ControlPanel* m_controlPanel = nullptr;
+};
+
+
+class ChannelViewport : public juce::Viewport
+{
+public:
+    std::function<void()> onVisibleAreaChanged;
+
+    void visibleAreaChanged(const juce::Rectangle<int>&) override
+    {
+        if (onVisibleAreaChanged)
+            onVisibleAreaChanged();
+    }
+};
+
+
+class ChannelList : public juce::Component
+{
+public:
+    explicit ChannelList(AudioDebuggerUI& owner)
+        : m_owner(owner)
+    {
+        setInterceptsMouseClicks(false, true);
+    }
+
+    void clear()
+    {
+        m_channels.clear();
+        setSize(getWidth(), 0);
+    }
+
+    void addTrack(juce::String name, TrackComponent* track, juce::Colour accent)
+    {
+        auto cc = std::make_unique<CollapsibleChannel>(name, track, accent);
+        cc->setTrackHeight(m_trackHeight);
+
+        auto* raw = cc.get();
+        cc->onToggled = [this, raw] { onTrackToggled(raw); };
+
+        addAndMakeVisible(*cc);
+        m_channels.push_back(std::move(cc));
+        resized();
+    }
+
+    CollapsibleChannel* findByChanId(int globalChanId) const
+    {
+        if (globalChanId < 0)
+            return nullptr;
+
+        for (auto& c : m_channels)
+            if (c->getGlobalChanId() == globalChanId)
+                return c.get();
+
+        return nullptr;
+    }
+
+    void setTrackHeight(int h)
+    {
+        if (m_trackHeight == h)
+            return;
+
+        m_trackHeight = h;
+
+        for (auto& c : m_channels)
+            c->setTrackHeight(h);
+
+        resized();
+    }
+
+    void resized() override
+    {
+        const int w = getWidth();
+
+        int y = 0;
+        for (auto& c : m_channels)
+        {
+            const int h = c->getPreferredHeight();
+            c->setBounds(0, y, w, h);
+            y += h;
+        }
+
+        setSize(w, y);
+    }
+
+    void mouseMove(const juce::MouseEvent& e) override { m_owner.mouseMove(e.getEventRelativeTo(&m_owner)); }
+    void mouseDown(const juce::MouseEvent& e) override { m_owner.mouseDown(e.getEventRelativeTo(&m_owner)); }
+    void mouseDrag(const juce::MouseEvent& e) override { m_owner.mouseDrag(e.getEventRelativeTo(&m_owner)); }
+    void mouseUp  (const juce::MouseEvent& e) override { m_owner.mouseUp  (e.getEventRelativeTo(&m_owner)); }
+    void mouseExit(const juce::MouseEvent& e) override { m_owner.mouseExit(e.getEventRelativeTo(&m_owner)); }
+
+    void mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel) override
+    {
+        if (e.mods.isAltDown())
+        {
+            juce::Component::mouseWheelMove(e, wheel);
+            return;
+        }
+
+        m_owner.mouseWheelMove(e.getEventRelativeTo(&m_owner), wheel);
+    }
+
+private:
+    void onTrackToggled(CollapsibleChannel* toggled)
+    {
+        auto* viewport = findParentComponentOfClass<juce::Viewport>();
+
+        const int yBefore = (viewport != nullptr)
+            ? viewport->getLocalArea(toggled, toggled->getLocalBounds()).getY()
+            : 0;
+
+        resized();
+
+        if (viewport != nullptr)
+        {
+            const int yAfter = viewport->getLocalArea(toggled, toggled->getLocalBounds()).getY();
+
+            if (yAfter != yBefore)
+            {
+                viewport->setViewPosition(viewport->getViewPositionX(),
+                    std::max(0, viewport->getViewPositionY() + (yAfter - yBefore)));
+            }
+        }
+
+        m_owner.channelLayoutChanged();
+    }
+
+    AudioDebuggerUI& m_owner;
+    std::vector<std::unique_ptr<CollapsibleChannel>> m_channels;
+    int m_trackHeight = AudioDebuggerUI::DEFAULT_TRACK_HEIGHT;
 };
 
 
@@ -476,11 +628,28 @@ AudioDebuggerUI::AudioDebuggerUI(DebugProcessor* processor)
 
     m_numInputs = AudioDebugger::get()->getNumInputs();
     m_numOutputs = AudioDebugger::get()->getNumOutputs();
-    refreshChannelBounds();
+
+    m_channelList.reset(new ChannelList(*this));
+
+    auto viewport = std::make_unique<ChannelViewport>();
+    viewport->onVisibleAreaChanged = [this] { channelLayoutChanged(); };
+    viewport->setViewedComponent(m_channelList.get(), false);
+    viewport->setScrollBarsShown(true, false);
+    m_viewport = std::move(viewport);
+    addAndMakeVisible(m_viewport.get());
+
+    m_overlay = std::make_unique<OverlayComponent>(*this);
+    addAndMakeVisible(m_overlay.get());
 }
 
 AudioDebuggerUI::~AudioDebuggerUI()
 {
+    if (m_channelList)
+        m_channelList->clear();
+
+    m_midiTrack.reset();
+    m_diffTrack.reset();
+
     setLookAndFeel(nullptr);
 }
 
@@ -607,46 +776,116 @@ int64_t AudioDebuggerUI::getSampleAtPosition(int x) const
 
 void AudioDebuggerUI::refreshChannelBounds()
 {
-    static constexpr float bottomMargin = 10.0f;
-    static constexpr float gapBetweenChannels = 30.0f;
-    static constexpr float topMargin = gapBetweenChannels;
-
-    const int inputNumChannels = m_numInputs;
-    const int outputNumChannels = m_numOutputs;
-    // +2 additional channels for diff view
-    const int totalChannels = inputNumChannels + outputNumChannels * 2;
-
-    const float totalHeight = getHeight();
-
-    auto& bounds = m_chanBounds.bounds;
-    bounds.resize(totalChannels);
-
-    const float totalGapHeight = totalChannels * gapBetweenChannels;
-    const float availableHeight = totalHeight - totalGapHeight - topMargin - bottomMargin;
-    m_chanBounds.channelHeight = availableHeight / totalChannels;
-    m_chanBounds.metadataHeight = gapBetweenChannels;
-
-    float currentY = topMargin;
-
-    for (int i = 0; i < totalChannels; ++i) {
-        bounds[i].minValue = currentY;
-        bounds[i].maxValue = currentY + m_chanBounds.channelHeight;
-        bounds[i].middle = bounds[i].minValue + m_chanBounds.channelHeight / 2.0f;
-        bounds[i].metaY = currentY - gapBetweenChannels;
-
-        currentY += m_chanBounds.channelHeight;
-
-        if (i < totalChannels) {
-            currentY += gapBetweenChannels;
-        }
+    if (m_channelList)
+    {
+        m_channelList->setTrackHeight(m_trackHeight);
+        m_channelList->resized();
     }
+
+    channelLayoutChanged();
 }
 
-int AudioDebuggerUI::getChannelHeight() const
+void AudioDebuggerUI::setTrackHeight(int heightPx)
 {
-    //const float channelHeight = getHeight() / (m_numInputs + m_numOutputs * 2);
-    //return channelHeight;
-    return m_chanBounds.channelHeight;
+    heightPx = juce::jlimit(MIN_TRACK_HEIGHT, MAX_TRACK_HEIGHT, heightPx);
+
+    if (m_trackHeight == heightPx)
+        return;
+
+    m_trackHeight = heightPx;
+
+    if (m_channelList)
+        m_channelList->setTrackHeight(m_trackHeight);
+
+    channelLayoutChanged();
+}
+
+int AudioDebuggerUI::chanIdToOutputIndex(int globalChanId) const
+{
+    if (globalChanId < m_numInputs)
+        return -1;
+
+    if (globalChanId < m_numInputs + m_numOutputs)
+        return globalChanId - m_numInputs;
+
+    return globalChanId - (m_numInputs + m_numOutputs);
+}
+
+ChannelComponent* AudioDebuggerUI::getChannel(int globalChanId) const
+{
+    if (globalChanId < 0 || globalChanId >= (int)m_channels.size())
+        return nullptr;
+
+    return m_channels[(size_t)globalChanId].get();
+}
+
+CollapsibleChannel* AudioDebuggerUI::getCollapsibleChannel(int globalChanId) const
+{
+    return m_channelList ? m_channelList->findByChanId(globalChanId) : nullptr;
+}
+
+bool AudioDebuggerUI::isChannelExpanded(int globalChanId) const
+{
+    auto* cc = getCollapsibleChannel(globalChanId);
+    return cc != nullptr && cc->isExpanded();
+}
+
+juce::Rectangle<int> AudioDebuggerUI::getChannelArea(int globalChanId) const
+{
+    auto* cc = getCollapsibleChannel(globalChanId);
+    if (cc == nullptr || !cc->isExpanded())
+        return {};
+
+    auto* ch = cc->getTrack();
+    if (ch == nullptr || ch->getHeight() <= 0)
+        return {};
+
+    const auto area = getLocalArea(ch, ch->getLocalBounds());
+    return area.getIntersection(m_viewport ? m_viewport->getBounds() : getLocalBounds());
+}
+
+juce::Rectangle<int> AudioDebuggerUI::getChannelHeaderArea(int globalChanId) const
+{
+    auto* cc = getCollapsibleChannel(globalChanId);
+    if (cc == nullptr)
+        return {};
+
+    auto header = cc->getLocalBounds().withHeight(CollapsibleChannel::getHeaderHeight());
+    const auto area = getLocalArea(cc, header);
+
+    return area.getIntersection(m_viewport ? m_viewport->getBounds() : getLocalBounds());
+}
+
+float AudioDebuggerUI::getChannelCentreY(int globalChanId) const
+{
+    const auto area = getChannelArea(globalChanId);
+    return area.isEmpty() ? 0.0f : (float)area.getCentreY();
+}
+
+void AudioDebuggerUI::channelLayoutChanged()
+{
+    onChannelLayoutChanged();
+
+    if (m_overlay)
+        m_overlay->repaint();
+}
+
+const SampleCache* AudioDebuggerUI::getSampleCache(int globalChanId) const
+{
+    auto* ch = getChannel(globalChanId);
+    return ch != nullptr ? ch->getSampleCache() : nullptr;
+}
+
+const juce::CriticalSection* AudioDebuggerUI::getSampleCacheLock(int globalChanId) const
+{
+    auto* ch = getChannel(globalChanId);
+    return ch != nullptr ? &ch->getCacheLock() : nullptr;
+}
+
+void AudioDebuggerUI::ensureSampleCache()
+{
+    if (overview && viewportLengthSamples > 0 && shouldPaintDetailedUI())
+        overview->updateSampleCache(viewportStartSample, viewportLengthSamples, m_channels);
 }
 
 juce::Colour AudioDebuggerUI::getWaveformColour(uint8_t channelId) const
@@ -662,36 +901,6 @@ juce::Colour AudioDebuggerUI::getWaveformColour(uint8_t channelId) const
 juce::String AudioDebuggerUI::getSampleValueString(float value, uint8_t bitDepth) const
 {
     return juce::String(AudioDebugger::floatToInt(value, bitDepth));
-}
-
-void AudioDebuggerUI::updateSampleCache_()
-{
-    if (!overview)
-        return;
-
-    int64_t padding = viewportLengthSamples / 4;
-    int64_t cacheStart = std::max((int64_t)0, viewportStartSample - padding);
-    int64_t cacheEnd = std::min(overview->getTotalSamples(),
-        viewportStartSample + viewportLengthSamples + padding);
-    int64_t cacheLength = cacheEnd - cacheStart;
-
-    sampleCache.bitDepth = AudioDebugger::get()->getBitDepth();
-
-    if (sampleCache.isValid() &&
-        sampleCache.contains(viewportStartSample) &&
-        sampleCache.contains(viewportStartSample + viewportLengthSamples - 1))
-    {
-        return;
-    }
-
-    sampleCache.clear();
-    sampleCache.startSample = cacheStart;
-    sampleCache.numSamples = cacheLength;
-
-    if (!overview->getSamplesFromFile(cacheStart, cacheLength, sampleCache.samples))
-    {
-        sampleCache.clear();
-    }
 }
 
 float AudioDebuggerUI::getFontSize(double pixelsPerSample) const
@@ -720,15 +929,9 @@ void AudioDebuggerUI::paint(juce::Graphics& g)
 
     const auto textColour = lnf->findColour(AudioDebuggerLookAndFeel::markerLabelColourId);
 
-    if (!overview)
-    {
-        g.setColour(textColour);
-        g.drawText("No audio file loaded", getLocalBounds(),
-            juce::Justification::centred);
-        return;
-    }
+    juce::ignoreUnused(textColour);
 
-    if (viewportLengthSamples <= 0)
+    if (!overview || viewportLengthSamples <= 0)
         return;
 
     {
@@ -739,25 +942,7 @@ void AudioDebuggerUI::paint(juce::Graphics& g)
         m_parentComponent->setZoomText(zoomLevel, verticalZoom, bIsUsingMipmaps, mipmapLevel, samplesPerPixel);
     }
 
-    if (isLoadingFile())
-    {
-        auto currentFont = g.getCurrentFont();
-
-        g.setFont(juce::Font(24.0f));
-        g.setColour(textColour);
-        juce::String progressText = juce::String(overview->getLoadingProgress()) + "% - Generating waveform...";
-        int textWidth = g.getCurrentFont().getStringWidth(progressText);
-        int textHeight = g.getCurrentFont().getHeight();
-
-        juce::Rectangle<int> textBounds((getWidth() - textWidth) / 2 - 10, (getHeight() - textHeight) / 2 - 10, textWidth + 20, textHeight + 20);
-        g.setColour(juce::Colours::black);
-        g.fillRect(textBounds);
-
-        g.setColour(juce::Colours::white);
-        g.drawText(progressText, getLocalBounds().reduced(10), juce::Justification::centred);
-
-        g.setFont(currentFont);
-    }
+    ensureSampleCache();
 }
 
 bool AudioDebuggerUI::shouldPaintDetailedUI() const
@@ -778,21 +963,26 @@ bool AudioDebuggerUI::shouldPaintExtraDetailedUI() const
 
 void AudioDebuggerUI::resized()
 {
-    zoomVSlider->setBounds(getWidth() - 40, getHeight() - 100, 40, 100);
+    auto bounds = getLocalBounds();
 
-    refreshChannelBounds();
+    zoomVSlider->setBounds(getWidth() - 20, getHeight() - 100, 20, 100);
 
-    for (size_t i = 0; i < m_channels.size(); ++i)
+    if (m_viewport)
     {
-        const auto& b = m_chanBounds.bounds[i];
-        m_channels[i]->setBounds(0,
-            (int)b.minValue,
-            getWidth(),
-            (int)(b.maxValue - b.minValue));
+        m_viewport->setBounds(bounds);
+
+        if (m_channelList)
+        {
+            m_channelList->setSize(m_viewport->getMaximumVisibleWidth(),
+                                   m_channelList->getHeight());
+        }
     }
 
     if (m_overlay)
-        m_overlay->setBounds(getLocalBounds());
+    {
+        m_overlay->setBounds(bounds);
+        m_overlay->toFront(false);
+    }
 }
 
 void AudioDebuggerUI::sliderValueChanged(juce::Slider* slider)
@@ -876,6 +1066,9 @@ void AudioDebuggerUI::timerCallback()
         // Below can be enabled for real-time refresh but is a bit slow
         else if (overview->getLiveRefreshRequired())
         {
+            if (m_midiTrack)
+                m_midiTrack->invalidateCache();
+
             if (overview->isLiveMode())
             {
                 updateVisibleRange();
@@ -894,12 +1087,17 @@ void AudioDebuggerUI::timerCallback()
 
                 if (right > left)
                 {
-                    const int channelStart = m_numInputs + m_numOutputs;
-                    const int totalChannels = m_numInputs + m_numOutputs * 2;
-                    for (int i = channelStart; i < totalChannels; ++i)
+                    for (int out = 0; out < (int)m_numOutputs; ++out)
                     {
-                        m_channels[i]->repaint(left, 0, right - left, getHeight());
+                        const int chanId = getRegenChanId(out);
+
+                        if (auto* channel = getChannel(chanId))
+                            if (isChannelExpanded(chanId))
+                                channel->repaint(left, 0, right - left, channel->getHeight());
                     }
+
+                    if (m_diffTrack)
+                        m_diffTrack->repaint(left, 0, right - left, m_diffTrack->getHeight());
                 }
 
                 m_repaintedRegenSamples = endRepaint;
@@ -1082,6 +1280,12 @@ void AudioDebuggerUI::mouseDown(const juce::MouseEvent& event)
     }
 }
 
+void AudioDebuggerUI::mouseUp(const juce::MouseEvent& event)
+{
+    juce::ignoreUnused(event);
+    isDragging = false;
+}
+
 void AudioDebuggerUI::mouseExit(const juce::MouseEvent& e)
 {
     if (onMouseSampleChanged) {
@@ -1171,8 +1375,14 @@ void AudioDebuggerUI::regenerateOutput(int32_t sampleItToDebug)
     }
 
     {
-        juce::ScopedLock lock(cacheLock);
-        sampleCache.clear();
+        for (auto& channel : m_channels)
+        {
+            channel->clearCache();
+        }
+
+        if (m_midiTrack)
+            m_midiTrack->invalidateCache();
+
         invalidateCustomCache_();
     }
 
@@ -1221,40 +1431,58 @@ bool AudioDebuggerUI::loadAudioFile(const juce::File& file, bool liveMode)
     m_numInputs = header.in_channels;
     m_numOutputs = header.out_channels;
 
-    const int totalChannels = m_numInputs + m_numOutputs * 2;
-    m_channels.reserve(totalChannels);
+    m_channelList->clear();
+    m_midiTrack.reset();
+    m_diffTrack.reset();
+
+    const int totalChannels = getTotalChannels();
     m_channels.clear();
+    m_channels.reserve(totalChannels);
     for (int i = 0; i < totalChannels; ++i)
     {
-        auto ch = std::make_unique<ChannelComponent>(*this, i);
-        addAndMakeVisible(ch.get());
-        m_channels.push_back(std::move(ch));
+        m_channels.push_back(std::make_unique<ChannelComponent>(*this, i));
     }
 
-    m_overlay = std::make_unique<OverlayComponent>(*this);
-    addAndMakeVisible(m_overlay.get());
+    m_midiTrack = std::make_unique<MidiTrackComponent>(*this);
+    m_channelList->addTrack("MIDI", m_midiTrack.get(), juce::Colours::mediumpurple);
+
+    for (int i = 0; i < m_numInputs; i++)
+    {
+        const int chanId = getInputChanId(i);
+        m_channelList->addTrack(juce::String::formatted("In %d", i + 1),
+                                m_channels[(size_t)chanId].get(),
+                                getWaveformColour((uint8_t)chanId));
+    }
+    for (int i = 0; i < m_numOutputs; i++)
+    {
+        const int chanId = getOutputChanId(i);
+        m_channelList->addTrack(juce::String::formatted("Out %d", i + 1),
+                                m_channels[(size_t)chanId].get(),
+                                getWaveformColour((uint8_t)chanId));
+    }
+
+    m_diffTrack = std::make_unique<DiffTrackComponent>(*this);
+    m_channelList->addTrack("Differences", m_diffTrack.get(), juce::Colours::orange);
+
+    for (int i = 0; i < m_numOutputs; i++)
+    {
+        const int chanId = getRegenChanId(i);
+        m_channelList->addTrack(juce::String::formatted("Regen Out %d", i + 1),
+                                m_channels[(size_t)chanId].get(),
+                                getWaveformColour((uint8_t)chanId));
+    }
 
     m_parentComponent->updateSampleRateDisplay(header.sample_rate);
 
-    resized();
-
     AudioDebugger::get()->setNumInputsOutputs(m_numInputs, m_numOutputs);
 
+    resized();
     refreshChannelBounds();
 
     updateVisibleRange();
     repaint();
 
     return true;
-}
-
-const std::vector<float>* AudioDebuggerUI::getCachedSamplesForChannel(int chanId) const
-{
-    if (!sampleCache.isValid())
-        return nullptr;
-    if (chanId < 0 || chanId >= (int)sampleCache.samples.size())
-        return nullptr;
-    return &sampleCache.samples[chanId];
 }
 
 bool AudioDebuggerUI::isLoadingFile() const
