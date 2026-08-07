@@ -434,6 +434,9 @@ void AudioDebugger::startRegenerate(const FileHeader& header, DebugProcessor* pr
 {
 	m_bIsRegenerating = true;
 
+	m_debugBufferWritePos = 0;
+	m_debugBlockCount = 0;
+
 	std::lock_guard<std::mutex> lock(m_writerMutex);
 
 	FileHeader newHeader = FileHeader(header);
