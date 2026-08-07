@@ -148,7 +148,7 @@ void ReportFile::locatePluginStateBlock()
     m_stateBlockOffset = 0;
     m_stateBlockSize = 0;
 
-    if (!fileUsesFrames(m_header))
+    if (!fileHasPluginState(m_header))
         return;
 
     m_file.clear();
@@ -223,6 +223,7 @@ void ReportFile::fixLegacyHeaderFields()
     // downstream can accidentally trust it.
     if (m_header.version < ERptFileVersion::WithFrames)
     {
+        m_header.flags = 0;
         m_header.total_samples = 0;
     }
 
@@ -782,9 +783,9 @@ void writeFileHeader(std::ostream& os, const FileHeader& h)
     writeInt(h.in_channels);
     writeInt(h.out_channels);
     writeInt8(h.bit_depth);
+    writeInt8(h.flags);
     writeInt8(h.reserved1[0]);
     writeInt8(h.reserved1[1]);
-    writeInt8(h.reserved1[2]);
     writeInt64(h.total_samples);
 
     assert(internalCount == sizeof(FileHeader));

@@ -179,10 +179,16 @@ bool FileWriter::start()
     m_nextFrameStartSample = 0;
 
     m_fileHeader.version = kCurrentFormatVersion;
+    m_fileHeader.flags = FileFlag_None;
     m_fileHeader.reserved1[0] = 0;
     m_fileHeader.reserved1[1] = 0;
     m_fileHeader.blocks_count = 0;
     m_fileHeader.total_samples = 0;
+
+    if (m_pluginState.empty())
+        m_fileHeader.flags &= static_cast<uint8_t>(~FileFlag_HasState);
+    else
+        m_fileHeader.flags |= FileFlag_HasState;
 
     writeFileHeader(m_file, m_fileHeader);
     writePluginStateBlock();

@@ -47,6 +47,12 @@ __Declaration__ \
 __pragma(pack(pop))
 #endif
 
+enum EFileFlags : uint8_t
+{
+    FileFlag_None = 0,
+    FileFlag_HasState = 1 << 0,
+};
+
 
 PACK(struct FileHeader
 {
@@ -58,7 +64,8 @@ PACK(struct FileHeader
     uint32_t in_channels = 0;
     uint32_t out_channels = 0;
     uint8_t bit_depth = 0;
-    uint8_t reserved1[3] = {};
+    uint8_t flags = 0;
+    uint8_t reserved1[2] = {};
     uint64_t total_samples = 0;
 });
 static_assert(sizeof(FileHeader) == 40);
@@ -101,6 +108,12 @@ struct PluginState
 inline bool fileUsesFrames(const FileHeader& header) noexcept
 {
     return (header.version >= ERptFileVersion::WithFrames);
+}
+
+inline bool fileHasPluginState(const FileHeader& header) noexcept
+{
+    return header.version >= ERptFileVersion::WithFrames
+        && (header.flags & FileFlag_HasState) != 0;
 }
 
 inline bool readFrameInfo(const uint8_t* data, size_t size, FrameInfo& out_info) noexcept
