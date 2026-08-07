@@ -364,7 +364,7 @@ void WaveformOverview::updateRegenerateThread(DebugProcessor* processor)
         tempInPtrs.push_back(const_cast<float*>(buff.data()));
 
     std::string genFileName;
-    pDebugger->startRegenerate(header, genFileName);
+    pDebugger->startRegenerate(header, processor, genFileName);
 
     processor->prepareToPlayHook(header.sample_rate, header.block_size);
 

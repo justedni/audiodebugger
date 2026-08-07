@@ -392,7 +392,7 @@ void UnitTestProcessor::regenerateRpt(uint64_t totalDuration)
 	std::vector<AudioDebug::RawMidiMessage> unusedMidiMessages;
 
 	std::string genFileName;
-	pDebugger->startRegenerate(header, genFileName);
+	pDebugger->startRegenerate(header, processor.get(), genFileName);
 
 	processor->prepareToPlayHook(header.sample_rate, header.block_size);
 

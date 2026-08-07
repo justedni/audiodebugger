@@ -88,6 +88,11 @@ void SamplePluginProcessor::processBlockImpl(juce::AudioBuffer<float>& buffer, j
     }
 }
 
+uint32_t SamplePluginProcessor::getStateId() const
+{
+    return static_cast<uint32_t>(JucePlugin_ManufacturerCode * 2654435761u) ^ JucePlugin_PluginCode;
+}
+
 juce::AudioProcessorEditor* SamplePluginProcessor::createEditor()
 {
     return new SamplePluginEditor(*this);

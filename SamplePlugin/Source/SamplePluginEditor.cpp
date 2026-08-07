@@ -13,7 +13,7 @@ SamplePluginEditor::SamplePluginEditor(SamplePluginProcessor& p)
     m_debuggerSpawner.reset(new AudioDebug::DebuggerSpawner(&p, "sample_plugin"));
     addAndMakeVisible(m_debuggerSpawner.get());
 
-    setSize(800, 600);
+    setSize(300, 200);
 }
 
 SamplePluginEditor::~SamplePluginEditor()

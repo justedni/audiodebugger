@@ -1656,6 +1656,24 @@ void AudioDebuggerUI::exportbinReport()
     });
 }
 
+void AudioDebuggerUI::restoreFileState(bool bIsGen)
+{
+    auto* file = bIsGen ? overview->getGenFile() : overview->getRptFile();
+    if (file && file->hasPluginState())
+    {
+        AudioDebug::PluginState state;
+        if (file->readPluginState(state))
+        {
+            const uint32_t expectedId = m_processor->getStateId();
+            const bool bSamePlugin = (expectedId == 0 || state.plugin_id == 0 || state.plugin_id == expectedId);
+
+            if (bSamePlugin)
+                m_processor->setStateInformationHook(state.data.data(), state.data.size());
+            else
+                assert(false); // trace was recorded from a different plugin
+        }
+    }
+}
 
 void AudioDebuggerUI::setAutoWriteRptFile(bool bEnable)
 {
@@ -1693,7 +1711,7 @@ MainMenuModel::MainMenuModel(AudioDebuggerUI* parent)
 
 juce::StringArray MainMenuModel::getMenuBarNames()
 {
-    return { "File", "Options"};
+    return { "File", "Options", "Plugin"};
 }
 
 juce::PopupMenu MainMenuModel::getMenuForIndex(int menuIndex, const juce::String& menuName)
@@ -1710,6 +1728,11 @@ juce::PopupMenu MainMenuModel::getMenuForIndex(int menuIndex, const juce::String
     else if (menuIndex == 1)
     {
         menu.addItem(DARKMODE, "Dark mode", true, m_optionDarkMode);
+    }
+    else if (menuIndex == 2)
+    {
+        menu.addItem(SET_RPT_STATE, "Restore state from .rpt file");
+        menu.addItem(SET_GEN_STATE, "Restore state from .gen file");
     }
 
     return menu;
@@ -1739,6 +1762,16 @@ void MainMenuModel::menuItemSelected(int menuItemID, int menuIndex)
         m_optionDarkMode = !m_optionDarkMode;
         m_parent->setUIDarkMode(m_optionDarkMode);
         menuItemsChanged();
+        break;
+    }
+    case SET_RPT_STATE:
+    {
+        m_parent->restoreFileState(false);
+        break;
+    }
+    case SET_GEN_STATE:
+    {
+        m_parent->restoreFileState(true);
         break;
     }
     }

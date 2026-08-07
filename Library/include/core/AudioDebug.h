@@ -148,7 +148,7 @@ public:
     static int32_t floatToInt(float sample, uint8_t bitDepth);
     static float intToFloat(int32_t sample, uint8_t bitDepth);
 
-    void startRegenerate(const FileHeader& header, std::string& out_genFileName);
+    void startRegenerate(const FileHeader& header, DebugProcessor* processor, std::string& out_genFileName);
     void endRegenerate();
     bool isRegenerating() const { return m_bIsRegenerating; }
 
@@ -167,6 +167,7 @@ private:
     void checkMaxLengthReached_();
     void waitUntilWriterHasFinished_();
     void serviceFromMessageThread();
+    void savePluginState(DebugProcessor* processor);
 
     void beginFrame(uint32_t numSamples);
     void endFrame();

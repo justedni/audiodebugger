@@ -17,9 +17,12 @@ public:
 
 	// Abstract interface
 	virtual int getLatencySamples(int samplesPerBlock) const { (void)samplesPerBlock; return 0; }
-	virtual void prepareToPlayHook(double sampleRate, int samplesPerBlock) { (void)sampleRate; (void)samplesPerBlock; }
+	virtual void prepareToPlayHook(double sampleRate, int samplesPerBlock) = 0;
 	virtual void releaseResourcesHook() {}
-	virtual void processBlockHook(int numSamples, float** inputs, const std::vector<RawMidiMessage>& midiMessages) { (void)numSamples; (void)inputs; (void)midiMessages; }
+	virtual void processBlockHook(int numSamples, float** inputs, const std::vector<RawMidiMessage>& midiMessages) = 0;
+	virtual void getStateInformationHook(std::vector<uint8_t>& out_data) { (void)out_data; }
+	virtual void setStateInformationHook(const uint8_t* data, size_t size) { (void)data; (void)size; }
+	virtual uint32_t getStateId() const { return 0; }
 
 	virtual void setSliderParam(uint8_t id, float value) { (void)id; (void)value; }
 	virtual float getSliderParam(uint8_t id) const { (void)id; return 0.0f; }

@@ -115,6 +115,11 @@ public:
     int64_t getFrameStartSample(uint32_t blockId) const;
     uint64_t getTotalSamples() const override;
 
+    bool hasPluginState() const { return m_stateBlockSize > 0; }
+    bool readPluginState(PluginState& out_state) override;
+
+    uint64_t getDataStartOffset() const { return m_dataStartOffset; }
+
     AudioBlockCallback onAudioBlock;
     MarkerCallback onMarker;
     MidiCallback onMidi;
@@ -123,6 +128,7 @@ private:
     void fillSampleCacheFromBlock(BlockType targetBlockType, int64_t startSample, int64_t numSamples, uint8_t numChannels, uint8_t outChanOffset, std::vector<SampleCache*> out_cache);
     void fixLegacyBitDepth();
     void fixLegacyHeaderFields();
+    void locatePluginStateBlock();
     void resetFrameState();
 
     void dispatchBlock(const ReadBlock& block, EProcessType processType, uint64_t blockOffset, int32_t& out_audioSamplesProcessed);
@@ -147,6 +153,10 @@ private:
     std::unique_ptr<ChannelReaderState> m_chanStateIn;
     std::unique_ptr<ChannelReaderState> m_chanStateOut;
     std::atomic<int64_t> m_customBlockSamplescount;
+
+    uint64_t m_dataStartOffset = sizeof(FileHeader);
+    uint64_t m_stateBlockOffset = 0;
+    uint32_t m_stateBlockSize = 0;
 
     bool m_usesFrames = false;
     uint32_t m_currentFrameId = 0;

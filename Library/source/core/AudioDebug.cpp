@@ -216,6 +216,17 @@ const std::string& AudioDebugger::getLastFileName() const
 	return m_debugFilepath;
 }
 
+void AudioDebugger::savePluginState(DebugProcessor* processor)
+{
+	std::vector<uint8_t> state;
+	processor->getStateInformationHook(state);
+	if (!state.empty())
+	{
+		m_debugWriter->setPluginState(state.data(), state.size(),
+			processor->getStateId());
+	}
+}
+
 void AudioDebugger::prepare(DebugProcessor* processor)
 {
 	m_debugBufferWritePos = 0;
@@ -236,6 +247,9 @@ void AudioDebugger::prepare(DebugProcessor* processor)
 			std::lock_guard<std::mutex> lock(m_writerMutex);
 
 			m_debugWriter.reset(new FileWriter(m_debugFilepath, header));
+
+			savePluginState(processor);
+
 			m_debugWriterStatusChanged = true;
 
 			if (!m_debugWriter->start())
@@ -416,7 +430,7 @@ void AudioDebugger::serviceFromMessageThread()
 	}
 }
 
-void AudioDebugger::startRegenerate(const FileHeader& header, std::string& out_genFileName)
+void AudioDebugger::startRegenerate(const FileHeader& header, DebugProcessor* processor, std::string& out_genFileName)
 {
 	m_bIsRegenerating = true;
 
@@ -431,6 +445,8 @@ void AudioDebugger::startRegenerate(const FileHeader& header, std::string& out_g
 
 	out_genFileName = m_debugFilepath + ".gen";
 	m_debugWriter.reset(new FileWriter(out_genFileName, newHeader));
+
+	savePluginState(processor);
 
 	if (!m_debugWriter->start())
 	{

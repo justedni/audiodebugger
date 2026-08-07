@@ -40,6 +40,7 @@ public:
 
     void getStateInformation([[maybe_unused]] juce::MemoryBlock& destData) override {}
     void setStateInformation([[maybe_unused]] const void* data, [[maybe_unused]] int sizeInBytes) override {}
+    uint32_t getStateId() const override;
 
 private:
     juce::AudioFormatManager m_formatManager;

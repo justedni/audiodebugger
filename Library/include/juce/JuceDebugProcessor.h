@@ -92,6 +92,8 @@ protected:
 	void prepareToPlayHook(double sampleRate, int samplesPerBlock) final;
 	void releaseResourcesHook() final;
 	void processBlockHook(int numSamples, float** inputs, const std::vector<RawMidiMessage>& midiMessages) final;
+	void getStateInformationHook(std::vector<uint8_t>& out_data) final;
+	void setStateInformationHook(const uint8_t* data, size_t size) final;
 
 private:
 	juce::MidiBuffer m_regenerateMidiMessages;

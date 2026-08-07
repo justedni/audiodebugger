@@ -109,6 +109,55 @@ FileWriter::~FileWriter()
     stop();
 }
 
+bool FileWriter::setPluginState(const void* data, size_t size, uint32_t stateVersion, uint32_t pluginId)
+{
+    if (m_running.load(std::memory_order_acquire))
+    {
+        // setPluginState() must be called before start()
+        assert(false);
+        return false;
+    }
+
+    if (size > (std::numeric_limits<uint32_t>::max)() - sizeof(StateHeader))
+    {
+        assert(false);
+        return false;
+    }
+
+    m_pluginState.clear();
+    m_pluginId = pluginId;
+
+    if (data != nullptr && size > 0)
+    {
+        const uint8_t* bytes = static_cast<const uint8_t*>(data);
+        m_pluginState.assign(bytes, bytes + size);
+    }
+
+    return true;
+}
+
+void FileWriter::writePluginStateBlock()
+{
+    if (m_pluginState.empty() || !m_file.is_open())
+        return;
+
+    StateHeader stateHeader;
+    stateHeader.plugin_id = m_pluginId;
+
+    std::vector<uint8_t> payload(sizeof(StateHeader) + m_pluginState.size());
+    std::memcpy(payload.data(), &stateHeader, sizeof(StateHeader));
+    std::memcpy(payload.data() + sizeof(StateHeader), m_pluginState.data(), m_pluginState.size());
+
+    BlockHeader header;
+    header.block_type = static_cast<uint32_t>(BlockType::STATE);
+    header.data_size = static_cast<uint32_t>(payload.size());
+    header.block_id = 0;
+    header.checksum = calculateChecksum(payload.data(), payload.size());
+
+    writeBlockHeader(m_file, header);
+    m_file.write(reinterpret_cast<const char*>(payload.data()), static_cast<std::streamsize>(payload.size()));
+}
+
 bool FileWriter::start()
 {
     m_file.open(m_filename, std::ios::binary | std::ios::out | std::ios::trunc);
@@ -136,6 +185,7 @@ bool FileWriter::start()
     m_fileHeader.total_samples = 0;
 
     writeFileHeader(m_file, m_fileHeader);
+    writePluginStateBlock();
     m_file.flush();
 
     m_running.store(true, std::memory_order_release);
@@ -220,7 +270,7 @@ BlockWriter FileWriter::beginBlock(BlockType type, uint32_t blockId) noexcept
 {
     assert(m_openSlot == nullptr && "a BlockWriter is already open - commit it first");
 
-    if (type != BlockType::FRAME)
+    if (type != BlockType::FRAME && type != BlockType::STATE)
     {
         ensureFrameForBlock(blockId);
         blockId = m_currentFrameId;

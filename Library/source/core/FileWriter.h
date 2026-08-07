@@ -26,6 +26,9 @@ public:
     FileWriter(const std::string& filename, const FileHeader& header);
     ~FileWriter();
 
+    bool setPluginState(const void* data, size_t size, uint32_t stateVersion = 0, uint32_t pluginId = 0);
+    bool hasPluginState() const { return !m_pluginState.empty(); }
+
     bool start();
     void stop();
 
@@ -56,6 +59,7 @@ protected:
 private:
     void drainRemaining();
 
+    void writePluginStateBlock();
     void ensureFrameForBlock(uint32_t blockId) noexcept;
 
     void writerLoop();
@@ -65,6 +69,9 @@ private:
     std::string m_filename;
     FileHeader m_fileHeader;
     size_t m_maxBlockBytes = 0;
+
+    std::vector<uint8_t> m_pluginState;
+    uint32_t m_pluginId = 0;
 
     std::ofstream m_file;
 

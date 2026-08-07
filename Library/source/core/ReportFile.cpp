@@ -137,6 +137,74 @@ bool ReportFile::openFile(bool liveMode)
 
     m_usesFrames = fileUsesFrames(m_header);
 
+    locatePluginStateBlock();
+
+    return true;
+}
+
+void ReportFile::locatePluginStateBlock()
+{
+    m_dataStartOffset = sizeof(FileHeader);
+    m_stateBlockOffset = 0;
+    m_stateBlockSize = 0;
+
+    if (!fileUsesFrames(m_header))
+        return;
+
+    m_file.clear();
+    m_file.seekg(sizeof(FileHeader), std::ios::beg);
+
+    BlockHeader header;
+    if (!peekNextBlockHeader(header) || static_cast<BlockType>(header.block_type) != BlockType::STATE)
+    {
+        assert(false);
+        m_file.clear();
+        m_file.seekg(sizeof(FileHeader), std::ios::beg);
+        return;
+    }
+
+    m_stateBlockOffset = sizeof(FileHeader);
+    m_stateBlockSize = header.data_size;
+    m_dataStartOffset = sizeof(FileHeader) + sizeof(BlockHeader) + header.data_size;
+
+    m_file.clear();
+    m_file.seekg(static_cast<std::streamoff>(m_dataStartOffset), std::ios::beg);
+}
+
+bool ReportFile::readPluginState(PluginState& out_state)
+{
+    out_state = PluginState();
+
+    if (!m_file.is_open() || m_stateBlockSize == 0)
+        return false;
+
+    const std::streampos saved = m_file.tellg();
+
+    m_file.clear();
+    m_file.seekg(static_cast<std::streamoff>(m_stateBlockOffset), std::ios::beg);
+
+    ReadBlock block;
+    uint32_t blockSize = 0;
+    const bool bRead = readFileBlock(block, blockSize);
+
+    m_file.clear();
+    m_file.seekg(saved);
+
+    if (!bRead
+        || block.type != BlockType::STATE
+        || !block.checksum_valid
+        || block.data.size() < sizeof(StateHeader))
+    {
+        assert(false);
+        return false;
+    }
+
+    StateHeader stateHeader;
+    std::memcpy(&stateHeader, block.data.data(), sizeof(StateHeader));
+
+    out_state.plugin_id = stateHeader.plugin_id;
+    out_state.data.assign(block.data.begin() + sizeof(StateHeader), block.data.end());
+
     return true;
 }
 
@@ -199,9 +267,9 @@ int64_t ReportFile::getFileOffset()
 void ReportFile::seekToDataStart()
 {
     m_file.clear();
-    m_file.seekg(sizeof(AudioDebug::FileHeader), std::ios::beg);
+    m_file.seekg(static_cast<std::streamoff>(m_dataStartOffset), std::ios::beg);
 
-    m_simulatedPos = sizeof(AudioDebug::FileHeader);
+    m_simulatedPos = m_dataStartOffset;
 
     resetFrameState();
 }
@@ -325,7 +393,9 @@ void ReportFile::dispatchBlock(const ReadBlock& block, EProcessType processType,
     case BlockType::FRAME:
         processFrameBlock(block);
         break;
-
+    case BlockType::STATE:
+        // Nothing to read (block was already processed at read start)
+        break;
     case BlockType::AUDIOIN:
         processAudioBlock(block, processType, blockOffset, header.in_channels, out_audioSamplesProcessed);
         break;
@@ -669,6 +739,7 @@ bool isBlockValid(BlockType type)
     switch (type)
     {
     case BlockType::FRAME:
+    case BlockType::STATE:
     case BlockType::AUDIOIN:
     case BlockType::AUDIOOUT:
     case BlockType::METADATA:

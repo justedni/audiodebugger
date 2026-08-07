@@ -29,6 +29,7 @@ enum class BlockType : uint32_t
     MIDI = 0x4944494d,   // 'MIDI'
     CUSTOM = 0x4d545343,   // 'CSTM'
     FRAME = 0x454d5246,   // 'FRME'  (v2+)
+    STATE = 0x54415453,   // 'STAT'  (v2+)
 };
 
 bool isBlockValid(BlockType type);
@@ -81,6 +82,21 @@ PACK(struct FrameInfo
 });
 static_assert(sizeof(FrameInfo) == 16);
 
+PACK(struct StateHeader
+{
+    uint32_t plugin_id = 0;
+    uint32_t reserved[3] = {};
+});
+static_assert(sizeof(StateHeader) == 16);
+
+
+struct PluginState
+{
+    uint32_t plugin_id = 0;
+    std::vector<uint8_t> data;
+
+    bool isValid() const { return !data.empty(); }
+};
 
 inline bool fileUsesFrames(const FileHeader& header) noexcept
 {
@@ -142,6 +158,7 @@ public:
     virtual bool readFileBlock(ReadBlock& out_block, uint32_t& out_blockSize) = 0;
     virtual bool findOffsetForCustomBlock(int64_t sampleNumber, uint64_t& out_offset, int64_t& out_blockStart) = 0;
     virtual uint64_t getTotalSamples() const = 0;
+    virtual bool readPluginState(PluginState& out_state) { (void)out_state; return false; }
 };
 
 } // namespace AudioDebug

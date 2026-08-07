@@ -170,4 +170,18 @@ void JuceDebugProcessor::processBlockHook(int numSamples, float** inputs, const 
     processBlockImpl(tempBuffer, juceMidiMessages, &scope);
 }
 
+void JuceDebugProcessor::getStateInformationHook(std::vector<uint8_t>& out_data)
+{
+    juce::MemoryBlock mb;
+    getStateInformation(mb);
+
+    const auto* bytes = static_cast<const uint8_t*>(mb.getData());
+    out_data.assign(bytes, bytes + mb.getSize());
+}
+
+void JuceDebugProcessor::setStateInformationHook(const uint8_t* data, size_t size)
+{
+    setStateInformation(data, static_cast<int>(size));
+}
+
 } // namespace AudioDebug

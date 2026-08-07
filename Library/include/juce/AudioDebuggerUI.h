@@ -126,6 +126,7 @@ public:
     void importgenFile();
     void refreshGenFile();
     void exportbinReport();
+    void restoreFileState(bool bIsGen);
     void setAutoWriteRptFile(bool bEnable);
     void setRptFileMaxLength(int numSeconds);
     void setUIDarkMode(bool bEnable);
@@ -304,6 +305,8 @@ enum EMenuItemID : uint8_t
     IMPORT_GEN,
     EXPORT,
     DARKMODE,
+    SET_RPT_STATE,
+    SET_GEN_STATE,
 };
 
 class WaveformPopup : public juce::DocumentWindow
