@@ -3,7 +3,7 @@
 
 #include "juce/AudioDebuggerUI.h"
 
-#include "core/AudioDebug.h"
+#include "core/DebuggerAccess.h"
 #include "core/DebugProcessor.h"
 #include "core/ReportFile.h"
 
@@ -712,7 +712,10 @@ ControlPanel* AudioDebuggerUI::getControlPanel() const { return m_controlPanel.g
 
 AudioDebugger* AudioDebuggerUI::getDebugger() const
 {
-    return m_processor ? &m_processor->getDebugger() : nullptr;
+    if (m_processor)
+        return &DebugProcessor::DebuggerAccess::get(*m_processor);
+
+    return nullptr;
 }
 
 void AudioDebuggerUI::addControlPanelOption(uint8_t id, const std::string& displayName, bool defaultEnabled)

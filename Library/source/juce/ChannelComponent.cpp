@@ -7,6 +7,8 @@
 #include "juce/Mipmaps.h"
 #include "juce/AudioDebuggerUI.h"
 #include "juce/WaveformOverview.h"
+
+#include "core/AudioDebugger.h"
 #include "core/ReportFile.h"
 #include "core/DiffDetector.h"
 

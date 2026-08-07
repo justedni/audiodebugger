@@ -1,5 +1,6 @@
 #include "core/UnitTests.h"
 
+#include "core/DebuggerAccess.h"
 #include "core/ReportFile.h"
 #include "core/DebugProcessor.h"
 
@@ -353,7 +354,7 @@ void UnitTestProcessor::initProcessor(const TestDesc& montage, const std::string
 
 	initializeUnitTest(montage, inChannelsCount, outChannelsCount);
 
-	auto& pDebugger = processor->getDebugger();
+	auto& pDebugger = AudioDebug::DebugProcessor::DebuggerAccess::get(*processor.get());
 	pDebugger.setNumInputsOutputs(inChannelsCount, outChannelsCount);
 
 	pDebugger.setRptFileMaxLength(-1);
@@ -367,7 +368,7 @@ void UnitTestProcessor::regenerateRpt(uint64_t totalDuration)
 {
 	using namespace AudioDebug;
 
-	auto& pDebugger = processor->getDebugger();
+	auto& pDebugger = DebugProcessor::DebuggerAccess::get(*processor.get());
 	//pDebugger->setSampleToDebug(sampleItToDebug);
 
 	ReadBlock block;

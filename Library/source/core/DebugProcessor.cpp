@@ -3,7 +3,7 @@
 
 #include "core/DebugProcessor.h"
 
-#include "core/AudioDebug.h"
+#include "core/AudioDebugger.h"
 
 namespace AudioDebug {
 
@@ -13,5 +13,35 @@ DebugProcessor::DebugProcessor()
 }
 
 DebugProcessor::~DebugProcessor() = default;
+
+void DebugProcessor::setCapturePath(const std::string& fullPath)
+{
+	m_debugger->setCaptureName(fullPath, false);
+}
+
+void DebugProcessor::initDebug(double sampleRate, int samplesPerBlock, int numInputs, int numOutputs, uint8_t bitDepth)
+{
+	m_debugger->initDebugProcessor(sampleRate, samplesPerBlock, numInputs, numOutputs, bitDepth);
+}
+
+void DebugProcessor::startDebugCapture()
+{
+	m_debugger->prepare(this);
+}
+
+void DebugProcessor::terminateDebugCapture()
+{
+	m_debugger->terminate();
+}
+
+bool DebugProcessor::isRegenerating() const
+{
+	return m_debugger->isRegenerating();
+}
+
+void DebugProcessor::setDebugInOutCount(uint8_t in_numInputs, uint8_t in_numOutputs)
+{
+	m_debugger->setNumInputsOutputs(in_numInputs, in_numOutputs);
+}
 
 } // namespace AudioDebug

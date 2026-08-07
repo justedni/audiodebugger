@@ -3,7 +3,7 @@
 
 #include "juce/DebuggerSpawner.h"
 
-#include "core/AudioDebug.h"
+#include "core/AudioDebugger.h"
 #include "core/DebugProcessor.h"
 #include "juce/AudioDebuggerUI.h"
 

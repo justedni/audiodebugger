@@ -73,7 +73,7 @@ void SamplePluginProcessor::processBlockImpl(juce::AudioBuffer<float>& buffer, j
             const auto& msg = midi.getMessage();
             if (msg.isNoteOn() || msg.isNoteOff())
             {
-                int32_t pos = getDebugger().getCurrentBufferTimestamp() + (int32_t)std::round(msg.getTimeStamp());
+                int32_t pos = scope->getCurrentBufferTimestamp() + (int32_t)std::round(msg.getTimeStamp());
                 auto& metadata = scope->raw().metadata();
 
                 static constexpr const char* textOn = "NoteOn";

@@ -3,6 +3,8 @@
 
 #include "juce/JuceDebugProcessor.h"
 
+#include "core/AudioDebugger.h"
+
 #ifdef _DEBUG
 namespace AudioThreadGuard
 {
@@ -70,7 +72,7 @@ void JuceDebugProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
 {
     m_isPlaying = false;
 
-    getDebugger().initDebugProcessor(
+    initDebug(
         std::round(sampleRate),
         samplesPerBlock,
         getTotalNumInputChannels(),
@@ -89,8 +91,7 @@ void JuceDebugProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
 {
     juce::ScopedNoDenormals noDenormals;
 
-    auto& debugger = getDebugger();
-    if (debugger.isRegenerating())
+    if (isRegenerating())
         return;
 
 #ifdef _DEBUG
@@ -112,7 +113,7 @@ void JuceDebugProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
             if (m_isPlaying != isPlaying)
             {
                 if (isPlaying) {
-                    debugger.prepare(this);
+                    startDebugCapture();
                 }
 
                 m_isPlaying = isPlaying;
@@ -122,7 +123,7 @@ void JuceDebugProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
 
     if (m_isPlaying)
     {
-        ScopedJuceDebugBlock scope(debugger,
+        ScopedJuceDebugBlock scope(*this,
             buffer,
             midiMessages,
             getTotalNumInputChannels(),
@@ -151,10 +152,7 @@ void JuceDebugProcessor::releaseResourcesHook()
 
 void JuceDebugProcessor::processBlockHook(int numSamples, float** inputs, const std::vector<RawMidiMessage>& midiMessages)
 {
-    auto& debugger = getDebugger();
-
-    const int numInputs = debugger.getNumInputs();
-    juce::AudioBuffer<float> tempBuffer(inputs, numInputs, numSamples);
+    juce::AudioBuffer<float> tempBuffer(inputs, getTotalNumInputChannels(), numSamples);
 
     juce::MidiBuffer juceMidiMessages;
     for (auto& msg : midiMessages)
@@ -162,7 +160,7 @@ void JuceDebugProcessor::processBlockHook(int numSamples, float** inputs, const 
         juceMidiMessages.addEvent(msg.data, static_cast<int>(msg.dataSize), msg.position);
     }
 
-    ScopedJuceDebugBlock scope(debugger,
+    ScopedJuceDebugBlock scope(*this,
         tempBuffer,
         juceMidiMessages,
         getTotalNumInputChannels(),
@@ -183,6 +181,11 @@ void JuceDebugProcessor::getStateInformationHook(std::vector<uint8_t>& out_data)
 void JuceDebugProcessor::setStateInformationHook(const uint8_t* data, size_t size)
 {
     setStateInformation(data, static_cast<int>(size));
+}
+
+int32_t ScopedJuceDebugBlock::getCurrentBufferTimestamp() const
+{
+    return m_block.getDebugger().getCurrentBufferTimestamp();
 }
 
 } // namespace AudioDebug

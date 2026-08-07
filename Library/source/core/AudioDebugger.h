@@ -1,0 +1,121 @@
+// Copyright (c) 2026 Vincent Dortel
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+#pragma once
+
+#include <atomic>
+#include <memory>
+#include <mutex>
+#include <string>
+
+#include "core/AudioDebugTypes.h"
+
+namespace AudioDebug {
+
+struct FileHeader;
+class DebugProcessor;
+
+class AudioDebugger
+{
+public:
+    AudioDebugger();
+    ~AudioDebugger();
+
+    AudioDebugger(AudioDebugger& other) = delete;
+    void operator=(const AudioDebugger&) = delete;
+
+    void initDebugProcessor(double sampleRate, int samplesPerBlock, int numInputs, int numOutputs, uint8_t bitDepth);
+
+    void waitUntilWriterHasFinished();
+    void resetWriter();
+    void setAutoWriteOutputFile(bool bEnable);
+    void setRptFileMaxLength(int numSecs);
+
+    bool getAsyncWriterStatusChanged();
+    bool getAsyncWriterGotDisconnected();
+    const std::string& getLastFileName() const;
+
+    void forceBreakSample(uint16_t currentSampleId);
+
+    void prepare(DebugProcessor* processor);
+    void terminate();
+
+    void setCaptureName(const std::string& fileName, bool bAppendDate);
+
+    using SampleAccFunc = AudioDebug::SampleAccFunc;
+    using BlockAddedFunc = std::function<void(uint32_t, const uint8_t*, size_t)>;
+
+    void pushAllInputSamples(int numSamples, int numChannels, const float* const* buffer);
+    void pushAllOutputSamples(int numSamples, int numChannels, const float* const* buffer);
+    void pushInDebugSamples(int numSamples, const SampleAccFunc f);
+    void pushOutDebugSamples(int numSamples, const SampleAccFunc& f);
+    BlockWriter& midiEventBlock() noexcept { return m_midiAccum.get(); }
+    BlockWriter& metadataBlock() noexcept { return m_metadataAccum.get(); }
+    BlockWriter& customBlock()   noexcept { return m_customAccum.get(); }
+
+    int32_t getCurrentBufferTimestamp() const;
+    int32_t getSampleIdInCurrentBuffer(int numSamples, int sampleId, bool lookback, int latencySamples) const;
+    void setSampleToDebug(int32_t sampleId) { m_sampleToDebug = sampleId; }
+
+    uint32_t getInstanceId() const noexcept { return m_instanceId; }
+
+    EBitDepth getBitDepth() const { return m_bitDepth; }
+    uint8_t getNumInputs() const { return m_numInputs; }
+    uint8_t getNumOutputs() const { return m_numOutputs; }
+    void setNumInputsOutputs(uint8_t in_numInputs, uint8_t in_numOutputs);
+
+    static int32_t floatToInt(float sample, uint8_t bitDepth);
+    static float intToFloat(int32_t sample, uint8_t bitDepth);
+
+    void startRegenerate(const FileHeader& header, DebugProcessor* processor, std::string& out_genFileName);
+    void endRegenerate();
+    bool isRegenerating() const { return m_bIsRegenerating; }
+
+    void setBlockAddedCallback(BlockAddedFunc func);
+
+    void serviceFromMessageThread();
+    bool isCapturing() const;
+
+private:
+    friend class ScopedDebugBlock;
+
+    void flushAccumulator_(BlockAccumulator& accum);
+    void resetWriter_();
+    void checkMaxLengthReached_();
+    void waitUntilWriterHasFinished_();
+    void savePluginState(DebugProcessor* processor);
+
+    bool beginFrame(uint32_t numSamples);
+    void endFrame();
+
+    const uint32_t m_instanceId;
+
+    bool m_autoWriteOutputFile = false;
+    int m_rptFileMaxLengthSecs = 0;
+
+    mutable std::mutex m_writerMutex;
+    std::unique_ptr<FileWriter> m_debugWriter;
+
+    std::atomic<bool> m_maxLengthReached{ false };
+
+    BlockAccumulator m_midiAccum;
+    BlockAccumulator m_metadataAccum;
+    BlockAccumulator m_customAccum;
+
+    std::string m_debugFilepath;
+    bool m_debugWriterStatusChanged = false;
+    bool m_debugWriterDisconnected = false;
+
+    int32_t m_sampleToDebug = -1;
+    uint64_t m_debugBufferWritePos = 0;
+    uint32_t m_debugBlockCount = 0;
+    bool m_bIsRegenerating = false;
+
+    EBitDepth m_bitDepth = EBitDepth::Int32;
+    uint8_t m_numInputs = 4;
+    uint8_t m_numOutputs = 2;
+    int m_sampleRate = 0;
+    int32_t m_maxSamplesPerBlock = 0;
+};
+
+} // namespace AudioDebug

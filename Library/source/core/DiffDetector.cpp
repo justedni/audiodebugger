@@ -3,7 +3,7 @@
 
 #include "core/DiffDetector.h"
 
-#include "core/AudioDebug.h"
+#include "core/AudioDebugger.h"
 
 #include <assert.h>
 

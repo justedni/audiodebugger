@@ -3,7 +3,7 @@
 
 #include "WaveformOverview.h"
 
-#include "core/AudioDebug.h"
+#include "core/DebuggerAccess.h"
 #include "core/DebugProcessor.h"
 #include "core/FileWriter.h"
 #include "juce/Mipmaps.h"
@@ -343,7 +343,7 @@ void WaveformOverview::updateRegenerateThread(DebugProcessor* processor)
     m_loadingProgress = 0;
     m_regenSamplesProcessed = 0;
 
-    auto* pDebugger = &processor->getDebugger();
+    auto& pDebugger = DebugProcessor::DebuggerAccess::get(*processor);
     //pDebugger->setSampleToDebug(sampleItToDebug);
 
     ReadBlock block;
@@ -364,7 +364,7 @@ void WaveformOverview::updateRegenerateThread(DebugProcessor* processor)
         tempInPtrs.push_back(const_cast<float*>(buff.data()));
 
     std::string genFileName;
-    pDebugger->startRegenerate(header, processor, genFileName);
+    pDebugger.startRegenerate(header, processor, genFileName);
 
     processor->prepareToPlayHook(header.sample_rate, header.block_size);
 
@@ -406,7 +406,7 @@ void WaveformOverview::updateRegenerateThread(DebugProcessor* processor)
 
     m_mipmaps->clearRegenChannels();
 
-    pDebugger->setBlockAddedCallback([&](auto type, const auto* bytes, auto size)
+    pDebugger.setBlockAddedCallback([&](auto type, const auto* bytes, auto size)
     {
         ReadBlock tempBlock;
         tempBlock.type = static_cast<BlockType>(type);
@@ -506,7 +506,7 @@ void WaveformOverview::updateRegenerateThread(DebugProcessor* processor)
 
         if (rptFileEnded)
         {
-            pDebugger->waitUntilWriterHasFinished();
+            pDebugger.waitUntilWriterHasFinished();
             break;
         }
     }
@@ -518,7 +518,7 @@ void WaveformOverview::updateRegenerateThread(DebugProcessor* processor)
 
     m_liveMode = previousLiveMode;
 
-    pDebugger->endRegenerate();
+    pDebugger.endRegenerate();
 
     for (int i = 0; i < numOutChannels; i++)
     {

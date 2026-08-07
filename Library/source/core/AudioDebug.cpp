@@ -3,6 +3,7 @@
 
 #include "core/AudioDebug.h"
 
+#include "core/DebuggerAccess.h"
 #include "core/FileWriter.h"
 #include "core/BlockWriter.h"
 
@@ -187,13 +188,13 @@ bool AudioDebugger::isCapturing() const
 	return m_debugWriter != nullptr;
 }
 
-void AudioDebugger::initDebugProcessor(double sampleRate, int samplesPerBlock, int numInputs, int numOutputs, EBitDepth bitDepth)
+void AudioDebugger::initDebugProcessor(double sampleRate, int samplesPerBlock, int numInputs, int numOutputs, uint8_t bitDepth)
 {
 	m_numInputs = numInputs;
 	m_numOutputs = numOutputs;
 	m_sampleRate = sampleRate;
 	m_maxSamplesPerBlock = samplesPerBlock;
-	m_bitDepth = bitDepth;
+	m_bitDepth = static_cast<EBitDepth>(bitDepth);
 }
 
 void AudioDebugger::setAutoWriteOutputFile(bool bEnable)
@@ -723,8 +724,8 @@ void addBufferStartMarker(BlockWriter& block, int timestamp)
 
 } // namespace Metadata
 
-ScopedDebugBlock::ScopedDebugBlock(AudioDebugger& debugger, uint32_t numSamples)
-	: m_debugger(debugger)
+ScopedDebugBlock::ScopedDebugBlock(DebugProcessor& processor, uint32_t numSamples)
+	: m_debugger(DebugProcessor::DebuggerAccess::get(processor))
 {
 	m_bActive = m_debugger.beginFrame(numSamples);
 	if (m_bActive)
@@ -743,6 +744,30 @@ ScopedDebugBlock::~ScopedDebugBlock()
 	}
 }
 
+void ScopedDebugBlock::writeInput(int numSamples, int numChannels, const float* const* buffer)
+{
+	if (m_bActive)
+		m_debugger.pushAllInputSamples(numSamples, numChannels, buffer);
+}
+
+void ScopedDebugBlock::writeInput(int numSamples, const AudioDebugger::SampleAccFunc& f)
+{
+	if (m_bActive)
+		m_debugger.pushInDebugSamples(numSamples, f);
+}
+
+void ScopedDebugBlock::writeOutput(int numSamples, int numChannels, const float* const* buffer)
+{
+	if (m_bActive)
+		m_debugger.pushAllOutputSamples(numSamples, numChannels, buffer);
+}
+
+void ScopedDebugBlock::writeOutput(int numSamples, const AudioDebugger::SampleAccFunc& f)
+{
+	if (m_bActive)
+		m_debugger.pushOutDebugSamples(numSamples, f);
+}
+
 void ScopedDebugBlock::pushMidiEvent(int position, int dataSize, const uint8_t* data)
 {
 	if (m_bActive)
@@ -750,6 +775,23 @@ void ScopedDebugBlock::pushMidiEvent(int position, int dataSize, const uint8_t* 
 		auto& midiBlock = m_debugger.midiEventBlock();
 		Metadata::addMidiEvent(midiBlock, position, dataSize, data);
 	}
+}
+
+static BlockWriter m_nullBlock{};
+
+BlockWriter& ScopedDebugBlock::metadata() noexcept
+{
+	return m_bActive ? m_debugger.metadataBlock() : m_nullBlock;
+}
+
+BlockWriter& ScopedDebugBlock::custom() noexcept
+{
+	return m_bActive ? m_debugger.customBlock() : m_nullBlock;
+}
+
+int32_t ScopedDebugBlock::getCurrentBufferTimestamp() const
+{
+	return m_debugger.getCurrentBufferTimestamp();
 }
 
 } // namespace AudioDebug
