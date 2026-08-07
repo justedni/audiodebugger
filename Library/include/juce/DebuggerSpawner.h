@@ -14,8 +14,8 @@ class DebugProcessor;
 class DebuggerSpawner : public juce::Component
 {
 public:
-	DebuggerSpawner(AudioDebug::DebugProcessor* processor, const juce::String& tracePrefix);
-	DebuggerSpawner(AudioDebug::AudioDebuggerUI* debugger, const juce::String& tracePrefix);
+	DebuggerSpawner(DebugProcessor* processor, const juce::String& tracePrefix);
+	DebuggerSpawner(AudioDebuggerUI* debugger, const juce::String& tracePrefix);
 	~DebuggerSpawner();
 
 	void resized() override;
@@ -25,8 +25,8 @@ private:
 	void openReport();
 
 	juce::TextButton m_buttonReport;
-	std::unique_ptr<AudioDebug::AudioDebuggerUI> m_reportViewer;
-	juce::Component::SafePointer<AudioDebug::WaveformPopup> m_reportWindow;
+	std::unique_ptr<AudioDebuggerUI> m_reportViewer;
+	juce::Component::SafePointer<WaveformPopup> m_reportWindow;
 
 	JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(DebuggerSpawner)
 };

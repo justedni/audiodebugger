@@ -70,15 +70,12 @@ void JuceDebugProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
 {
     m_isPlaying = false;
 
-    if (auto* debugger = AudioDebug::AudioDebugger::get())
-    {
-        debugger->initDebugProcessor(
-            std::round(sampleRate),
-            samplesPerBlock,
-            getTotalNumInputChannels(),
-            getTotalNumOutputChannels(),
-            AudioDebug::EBitDepth::Int32);
-    }
+    getDebugger().initDebugProcessor(
+        std::round(sampleRate),
+        samplesPerBlock,
+        getTotalNumInputChannels(),
+        getTotalNumOutputChannels(),
+        AudioDebug::EBitDepth::Int32);
 
     prepareToPlayImpl(sampleRate, samplesPerBlock);
 }
@@ -92,8 +89,8 @@ void JuceDebugProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
 {
     juce::ScopedNoDenormals noDenormals;
 
-    auto* pDebugger = AudioDebug::AudioDebugger::get();
-    if (pDebugger->isRegenerating())
+    auto& debugger = getDebugger();
+    if (debugger.isRegenerating())
         return;
 
 #ifdef _DEBUG
@@ -114,8 +111,8 @@ void JuceDebugProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
             // Useful toggle for MIDI synths to only send data when DAW is playing
             if (m_isPlaying != isPlaying)
             {
-                if (isPlaying && pDebugger) {
-                    pDebugger->prepare(this);
+                if (isPlaying) {
+                    debugger.prepare(this);
                 }
 
                 m_isPlaying = isPlaying;
@@ -125,7 +122,8 @@ void JuceDebugProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
 
     if (m_isPlaying)
     {
-        ScopedJuceDebugBlock scope(buffer,
+        ScopedJuceDebugBlock scope(debugger,
+            buffer,
             midiMessages,
             getTotalNumInputChannels(),
             getTotalNumOutputChannels());
@@ -153,7 +151,9 @@ void JuceDebugProcessor::releaseResourcesHook()
 
 void JuceDebugProcessor::processBlockHook(int numSamples, float** inputs, const std::vector<RawMidiMessage>& midiMessages)
 {
-    const int numInputs = AudioDebug::AudioDebugger::get()->getNumInputs();
+    auto& debugger = getDebugger();
+
+    const int numInputs = debugger.getNumInputs();
     juce::AudioBuffer<float> tempBuffer(inputs, numInputs, numSamples);
 
     juce::MidiBuffer juceMidiMessages;
@@ -162,7 +162,8 @@ void JuceDebugProcessor::processBlockHook(int numSamples, float** inputs, const 
         juceMidiMessages.addEvent(msg.data, static_cast<int>(msg.dataSize), msg.position);
     }
 
-    ScopedJuceDebugBlock scope(tempBuffer,
+    ScopedJuceDebugBlock scope(debugger,
+        tempBuffer,
         juceMidiMessages,
         getTotalNumInputChannels(),
         getTotalNumOutputChannels());

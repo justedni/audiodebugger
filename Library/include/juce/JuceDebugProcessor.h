@@ -15,11 +15,12 @@ struct RawMidiMessage;
 class ScopedJuceDebugBlock
 {
 public:
-	ScopedJuceDebugBlock(juce::AudioBuffer<float>& buffer,
+	ScopedJuceDebugBlock(AudioDebugger& debugger,
+						 juce::AudioBuffer<float>& buffer,
 						 const juce::MidiBuffer& midiMessages,
 						 int numInputChannels,
 						 int numOutputChannels) noexcept
-		: m_block(buffer.getNumSamples())
+		: m_block(debugger, buffer.getNumSamples())
 		, m_buffer(buffer)
 		, m_numInputChannels(numInputChannels)
 		, m_numOutputChannels(numOutputChannels)
@@ -61,6 +62,7 @@ public:
 	ScopedJuceDebugBlock& operator=(ScopedJuceDebugBlock&&)      = delete;
 
 	explicit operator bool() const noexcept { return static_cast<bool>(m_block); }
+	bool isActive() { return operator bool(); }
 
 	ScopedDebugBlock& raw() noexcept { return m_block; }
 

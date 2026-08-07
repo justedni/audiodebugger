@@ -21,10 +21,6 @@
 
 namespace AudioDebug {
 
-std::unique_ptr<AudioDebugger> AudioDebugger::m_singleton;
-std::mutex AudioDebugger::m_mutex;
-
-
 SampleWriter::SampleWriter(uint8_t* dest, size_t maxBytes, uint8_t bitDepth) noexcept
 	: m_dest(dest)
 	, m_pos(0)
@@ -104,8 +100,41 @@ void SampleWriter::push(float sample) noexcept
 	push(value);
 }
 
+namespace {
+
+std::mutex g_instanceIdMutex;
+std::vector<bool> g_instanceIdsInUse;
+
+uint32_t acquireInstanceId()
+{
+	std::lock_guard<std::mutex> lock(g_instanceIdMutex);
+
+	for (size_t i = 0; i < g_instanceIdsInUse.size(); ++i)
+	{
+		if (!g_instanceIdsInUse[i])
+		{
+			g_instanceIdsInUse[i] = true;
+			return static_cast<uint32_t>(i);
+		}
+	}
+
+	g_instanceIdsInUse.push_back(true);
+	return static_cast<uint32_t>(g_instanceIdsInUse.size() - 1);
+}
+
+void releaseInstanceId(uint32_t id)
+{
+	std::lock_guard<std::mutex> lock(g_instanceIdMutex);
+
+	if (id < g_instanceIdsInUse.size())
+		g_instanceIdsInUse[id] = false;
+}
+
+} // namespace
+
 AudioDebugger::AudioDebugger()
-	: m_midiAccum{ BlockType::MIDI }
+	: m_instanceId(acquireInstanceId())
+	, m_midiAccum{ BlockType::MIDI }
 	, m_metadataAccum{ BlockType::METADATA }
 	, m_customAccum{ BlockType::CUSTOM }
 {
@@ -114,6 +143,8 @@ AudioDebugger::AudioDebugger()
 AudioDebugger::~AudioDebugger()
 {
 	resetWriter();
+
+	releaseInstanceId(m_instanceId);
 }
 
 void AudioDebugger::waitUntilWriterHasFinished()
@@ -150,24 +181,10 @@ void AudioDebugger::resetWriter_()
 	m_debugBufferWritePos = 0;
 }
 
-AudioDebugger* AudioDebugger::get()
+bool AudioDebugger::isCapturing() const
 {
-	std::lock_guard<std::mutex> lock(m_mutex);
-	return m_singleton.get();
-}
-
-void AudioDebugger::create()
-{
-	std::lock_guard<std::mutex> lock(m_mutex);
-	if (m_singleton == nullptr)
-		m_singleton = std::make_unique<AudioDebugger>();
-}
-
-void AudioDebugger::release()
-{
-	std::lock_guard<std::mutex> lock(m_mutex);
-	if (m_singleton.get())
-		m_singleton.reset();
+	std::lock_guard<std::mutex> lock(m_writerMutex);
+	return m_debugWriter != nullptr;
 }
 
 void AudioDebugger::initDebugProcessor(double sampleRate, int samplesPerBlock, int numInputs, int numOutputs, EBitDepth bitDepth)
@@ -289,26 +306,37 @@ std::string generateLogFilename(const std::string& fileName)
 
 void AudioDebugger::setCaptureName(const std::string& fileName, bool bAppendDate)
 {
-	if (bAppendDate)
-		m_debugFilepath = generateLogFilename(fileName);
-	else
-		m_debugFilepath = fileName;
-
 	static const std::string ext = ".rpt";
-	auto hasExt = (m_debugFilepath.compare(m_debugFilepath.size() - ext.size(), ext.size(), ext) == 0);
 
-	if (!hasExt)
-		m_debugFilepath.append(ext);
+	std::string name = fileName;
+	if (name.size() >= ext.size()
+		&& name.compare(name.size() - ext.size(), ext.size(), ext) == 0)
+	{
+		name.erase(name.size() - ext.size());
+	}
+
+	if (m_instanceId != 0)
+		name += "_" + std::to_string(m_instanceId);
+
+	if (bAppendDate)
+		m_debugFilepath = generateLogFilename(name);
+	else
+		m_debugFilepath = name + ext;
 }
 
 void AudioDebugger::setBlockAddedCallback(BlockAddedFunc func)
 {
-	m_debugWriter->setBlockAddedCallback(func);
+	if (m_debugWriter)
+		m_debugWriter->setBlockAddedCallback(func);
 }
 
-void AudioDebugger::beginFrame(uint32_t numSamples)
+bool AudioDebugger::beginFrame(uint32_t numSamples)
 {
+	if (!m_debugWriter)
+		return false;
+
 	m_debugWriter->beginFrame(numSamples);
+	return true;
 }
 
 void AudioDebugger::pushAllInputSamples(int numSamples, int numChannels, const float* const* buffer)
@@ -695,32 +723,31 @@ void addBufferStartMarker(BlockWriter& block, int timestamp)
 
 } // namespace Metadata
 
-ScopedDebugBlock::ScopedDebugBlock(uint32_t numSamples)
+ScopedDebugBlock::ScopedDebugBlock(AudioDebugger& debugger, uint32_t numSamples)
+	: m_debugger(debugger)
 {
-	m_debugger = AudioDebug::AudioDebugger::get();
-	if (m_debugger)
+	m_bActive = m_debugger.beginFrame(numSamples);
+	if (m_bActive)
 	{
-		m_debugger->beginFrame(numSamples);
-
-		auto& metadataBlock = m_debugger->metadataBlock();
-		auto timestamp = m_debugger->getCurrentBufferTimestamp();
+		auto& metadataBlock = m_debugger.metadataBlock();
+		auto timestamp = m_debugger.getCurrentBufferTimestamp();
 		Metadata::addBufferStartMarker(metadataBlock, timestamp);
 	}
 }
 
 ScopedDebugBlock::~ScopedDebugBlock()
 {
-	if (m_debugger)
+	if (m_bActive)
 	{
-		m_debugger->endFrame();
+		m_debugger.endFrame();
 	}
 }
 
 void ScopedDebugBlock::pushMidiEvent(int position, int dataSize, const uint8_t* data)
 {
-	if (m_debugger)
+	if (m_bActive)
 	{
-		auto& midiBlock = m_debugger->midiEventBlock();
+		auto& midiBlock = m_debugger.midiEventBlock();
 		Metadata::addMidiEvent(midiBlock, position, dataSize, data);
 	}
 }

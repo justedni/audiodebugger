@@ -257,7 +257,7 @@ void ChannelComponent::paintSampleValues(juce::Graphics& g)
 
     const auto& chanSamples = sampleCache.samples;
 
-    const auto bitDepth = AudioDebugger::get()->getBitDepth();
+    const auto bitDepth = m_debugger.getDebugger()->getBitDepth();
 
     const int64_t viewportStart = m_debugger.getViewportStartSample();
     const int64_t viewportLen   = m_debugger.getViewportLengthSamples();

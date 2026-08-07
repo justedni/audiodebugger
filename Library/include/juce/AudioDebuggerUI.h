@@ -8,6 +8,7 @@
 namespace AudioDebug {
 
 class MainMenuModel;
+class AudioDebugger;
 class DebugProcessor;
 class ControlPanel;
 class CustomSlider;
@@ -151,6 +152,8 @@ public:
 
     ControlPanel* getControlPanel() const;
     DebugProcessor* getProcessor() const { return m_processor; }
+
+    AudioDebugger* getDebugger() const;
 
     int64_t getViewportStartSample() const { return viewportStartSample; }
     int64_t getViewportLengthSamples() const { return viewportLengthSamples; }

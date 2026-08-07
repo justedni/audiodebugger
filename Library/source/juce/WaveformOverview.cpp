@@ -343,7 +343,7 @@ void WaveformOverview::updateRegenerateThread(DebugProcessor* processor)
     m_loadingProgress = 0;
     m_regenSamplesProcessed = 0;
 
-    auto* pDebugger = AudioDebug::AudioDebugger::get();
+    auto* pDebugger = &processor->getDebugger();
     //pDebugger->setSampleToDebug(sampleItToDebug);
 
     ReadBlock block;

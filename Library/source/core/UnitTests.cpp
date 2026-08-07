@@ -353,13 +353,13 @@ void UnitTestProcessor::initProcessor(const TestDesc& montage, const std::string
 
 	initializeUnitTest(montage, inChannelsCount, outChannelsCount);
 
-	auto* pDebugger = AudioDebug::AudioDebugger::get();
-	pDebugger->setNumInputsOutputs(inChannelsCount, outChannelsCount);
+	auto& pDebugger = processor->getDebugger();
+	pDebugger.setNumInputsOutputs(inChannelsCount, outChannelsCount);
 
-	pDebugger->setRptFileMaxLength(-1);
-	pDebugger->resetWriter();
-	pDebugger->setCaptureName(outRptFilePath, false);
-	pDebugger->setAutoWriteOutputFile(true);
+	pDebugger.setRptFileMaxLength(-1);
+	pDebugger.resetWriter();
+	pDebugger.setCaptureName(outRptFilePath, false);
+	pDebugger.setAutoWriteOutputFile(true);
 }
 
 // Copied/adapted from WaveformOverview::updateRegenerateThread
@@ -367,7 +367,7 @@ void UnitTestProcessor::regenerateRpt(uint64_t totalDuration)
 {
 	using namespace AudioDebug;
 
-	auto* pDebugger = AudioDebug::AudioDebugger::get();
+	auto& pDebugger = processor->getDebugger();
 	//pDebugger->setSampleToDebug(sampleItToDebug);
 
 	ReadBlock block;
@@ -392,7 +392,7 @@ void UnitTestProcessor::regenerateRpt(uint64_t totalDuration)
 	std::vector<AudioDebug::RawMidiMessage> unusedMidiMessages;
 
 	std::string genFileName;
-	pDebugger->startRegenerate(header, processor.get(), genFileName);
+	pDebugger.startRegenerate(header, processor.get(), genFileName);
 
 	processor->prepareToPlayHook(header.sample_rate, header.block_size);
 
@@ -413,7 +413,7 @@ void UnitTestProcessor::regenerateRpt(uint64_t totalDuration)
 	m_diffDetector->startDetection(header.out_channels);
 
 
-	pDebugger->setBlockAddedCallback([&](auto type, const auto* bytes, auto size)
+	pDebugger.setBlockAddedCallback([&](auto type, const auto* bytes, auto size)
 	{
 		ReadBlock tempBlock;
 		tempBlock.type = static_cast<BlockType>(type);
@@ -508,12 +508,12 @@ void UnitTestProcessor::regenerateRpt(uint64_t totalDuration)
 
 		if (rptFileEnded)
 		{
-			pDebugger->waitUntilWriterHasFinished();
+			pDebugger.waitUntilWriterHasFinished();
 			break;
 		}
 	}
 
-	pDebugger->endRegenerate();
+	pDebugger.endRegenerate();
 
 	for (int i = 0; i < numOutChannels; i++)
 	{

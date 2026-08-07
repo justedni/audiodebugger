@@ -4,19 +4,20 @@
 #include "juce/DebuggerSpawner.h"
 
 #include "core/AudioDebug.h"
+#include "core/DebugProcessor.h"
 #include "juce/AudioDebuggerUI.h"
 
 namespace AudioDebug {
 
-DebuggerSpawner::DebuggerSpawner(AudioDebug::DebugProcessor* processor, const juce::String& tracePrefix)
+DebuggerSpawner::DebuggerSpawner(DebugProcessor* processor, const juce::String& tracePrefix)
     : m_buttonReport("Debugger")
 {
-    m_reportViewer.reset(new AudioDebug::AudioDebuggerUI(processor));
+    m_reportViewer.reset(new AudioDebuggerUI(processor));
 
     init(tracePrefix);
 }
 
-DebuggerSpawner::DebuggerSpawner(AudioDebug::AudioDebuggerUI* debugger, const juce::String& tracePrefix)
+DebuggerSpawner::DebuggerSpawner(AudioDebuggerUI* debugger, const juce::String& tracePrefix)
     : m_buttonReport("Debugger")
 {
     m_reportViewer.reset(debugger);
@@ -35,7 +36,8 @@ void DebuggerSpawner::init(const juce::String& tracePrefix)
     addAndMakeVisible(m_buttonReport);
 
     auto path = juce::File::getSpecialLocation(juce::File::tempDirectory).getChildFile(tracePrefix + ".rpt");
-    AudioDebug::AudioDebugger::get()->setCaptureName(path.getFullPathName().toStdString(), false);
+    if (auto* debugger = m_reportViewer->getDebugger())
+        debugger->setCaptureName(path.getFullPathName().toStdString(), false);
 
     m_buttonReport.onClick = [this] { openReport(); };
 }

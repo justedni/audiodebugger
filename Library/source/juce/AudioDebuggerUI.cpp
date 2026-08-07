@@ -49,14 +49,16 @@ public:
             }
             case State::Armed: juce::Colours::orange;
             {
-                AudioDebugger::get()->resetWriter();
+                if (auto* debugger = m_audioDebugger->getDebugger())
+                    debugger->resetWriter();
                 m_state = State::Disconnected;
                 break;
             }
             case State::Connected: juce::Colours::red;
             {
                 m_audioDebugger->triggerCaptureEnd();
-                AudioDebugger::get()->resetWriter();
+                if (auto* debugger = m_audioDebugger->getDebugger())
+                    debugger->resetWriter();
                 m_state = State::Disconnected;
                 break;
             }
@@ -605,7 +607,7 @@ private:
 AudioDebuggerUI::AudioDebuggerUI(DebugProcessor* processor)
     : m_processor(processor)
 {
-    m_controlPanel.reset(new ControlPanel(this, processor));
+    m_controlPanel.reset(new ControlPanel(this, processor ? processor->getParameterBridge() : nullptr));
 
     m_lookAndFeel.reset(new AudioDebuggerLookAndFeel());
     setLookAndFeel(m_lookAndFeel.get());
@@ -626,8 +628,11 @@ AudioDebuggerUI::AudioDebuggerUI(DebugProcessor* processor)
     zoomVSlider->setColour(juce::Slider::backgroundColourId, juce::Colours::grey.withAlpha(0.5f));
     addAndMakeVisible(zoomVSlider.get());
 
-    m_numInputs = AudioDebugger::get()->getNumInputs();
-    m_numOutputs = AudioDebugger::get()->getNumOutputs();
+    if (auto* debugger = getDebugger())
+    {
+        m_numInputs = debugger->getNumInputs();
+        m_numOutputs = debugger->getNumOutputs();
+    }
 
     m_channelList.reset(new ChannelList(*this));
 
@@ -655,8 +660,6 @@ AudioDebuggerUI::~AudioDebuggerUI()
 
 void AudioDebuggerUI::initialize()
 {
-    AudioDebugger::create();
-
     auto* menuBarModel = m_parentComponent->getMenuBarModel();
     setAutoWriteRptFile(m_parentComponent->getAutoWriteRptFile());
     setRptFileMaxLength(m_parentComponent->getRptFileMaxLength());
@@ -706,6 +709,11 @@ void AudioDebuggerUI::triggerCaptureEnd()
 }
 
 ControlPanel* AudioDebuggerUI::getControlPanel() const { return m_controlPanel.get(); }
+
+AudioDebugger* AudioDebuggerUI::getDebugger() const
+{
+    return m_processor ? &m_processor->getDebugger() : nullptr;
+}
 
 void AudioDebuggerUI::addControlPanelOption(uint8_t id, const std::string& displayName, bool defaultEnabled)
 {
@@ -1025,7 +1033,7 @@ void AudioDebuggerUI::autoConnectToLastFile()
 
 void AudioDebuggerUI::timerCallback()
 {
-    auto* pDebugger = AudioDebug::AudioDebugger::get();
+    auto* pDebugger = getDebugger();
     if (!pDebugger)
         return;
 
@@ -1480,7 +1488,8 @@ bool AudioDebuggerUI::loadAudioFile(const juce::File& file, bool liveMode)
 
     m_parentComponent->updateSampleRateDisplay(header.sample_rate);
 
-    AudioDebugger::get()->setNumInputsOutputs(m_numInputs, m_numOutputs);
+    if (auto* debugger = getDebugger())
+        debugger->setNumInputsOutputs(m_numInputs, m_numOutputs);
 
     resized();
     refreshChannelBounds();
@@ -1614,10 +1623,13 @@ void AudioDebuggerUI::refreshGenFile()
 void AudioDebuggerUI::exportbinReport()
 {
     juce::File sourceFile;
-    const auto& filename = AudioDebug::AudioDebugger::get()->getLastFileName();
-    if (!filename.empty())
+    if (auto* debugger = getDebugger())
     {
-        sourceFile = juce::File::getCurrentWorkingDirectory().getChildFile(filename);
+        const auto& filename = debugger->getLastFileName();
+        if (!filename.empty())
+        {
+            sourceFile = juce::File::getCurrentWorkingDirectory().getChildFile(filename);
+        }
     }
 
     if (!sourceFile.existsAsFile())
@@ -1678,13 +1690,15 @@ void AudioDebuggerUI::restoreFileState(bool bIsGen)
 void AudioDebuggerUI::setAutoWriteRptFile(bool bEnable)
 {
     m_parentComponent->setAutoWriteRptFile(bEnable);
-    AudioDebug::AudioDebugger::get()->setAutoWriteOutputFile(bEnable);
+    if (auto* debugger = getDebugger())
+        debugger->setAutoWriteOutputFile(bEnable);
 }
 
 void AudioDebuggerUI::setRptFileMaxLength(int numSeconds)
 {
     m_parentComponent->setRptFileMaxLength(numSeconds);
-    AudioDebug::AudioDebugger::get()->setRptFileMaxLength(numSeconds);
+    if (auto* debugger = getDebugger())
+        debugger->setRptFileMaxLength(numSeconds);
 }
 
 void AudioDebuggerUI::setUIDarkMode(bool bEnable)

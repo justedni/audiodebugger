@@ -105,8 +105,6 @@ public:
     AudioDebugger(AudioDebugger& other) = delete;
     void operator=(const AudioDebugger&) = delete;
 
-    static AudioDebugger* get();
-
     void initDebugProcessor(double sampleRate, int samplesPerBlock, int numInputs, int numOutputs, EBitDepth bitDepth);
 
     void waitUntilWriterHasFinished();
@@ -140,6 +138,8 @@ public:
     int32_t getSampleIdInCurrentBuffer(int numSamples, int sampleId, bool lookback, int latencySamples) const;
     void setSampleToDebug(int32_t sampleId) { m_sampleToDebug = sampleId; }
 
+    uint32_t getInstanceId() const noexcept { return m_instanceId; }
+
     EBitDepth getBitDepth() const { return m_bitDepth; }
     uint8_t getNumInputs() const { return m_numInputs; }
     uint8_t getNumOutputs() const { return m_numOutputs; }
@@ -154,31 +154,27 @@ public:
 
     void setBlockAddedCallback(BlockAddedFunc func);
 
-protected:
-    friend class DebugProcessor;
-    friend class AudioDebuggerUI;
-    friend class ScopedDebugBlock;
-    static void create();
-    static void release();
+    void serviceFromMessageThread();
+    bool isCapturing() const;
 
 private:
+    friend class ScopedDebugBlock;
+
     void flushAccumulator_(BlockAccumulator& accum);
     void resetWriter_();
     void checkMaxLengthReached_();
     void waitUntilWriterHasFinished_();
-    void serviceFromMessageThread();
     void savePluginState(DebugProcessor* processor);
 
-    void beginFrame(uint32_t numSamples);
+    bool beginFrame(uint32_t numSamples);
     void endFrame();
 
-    static std::unique_ptr<AudioDebugger> m_singleton;
-    static std::mutex m_mutex;
+    const uint32_t m_instanceId;
 
     bool m_autoWriteOutputFile = false;
     int m_rptFileMaxLengthSecs = 0;
 
-    std::mutex m_writerMutex;
+    mutable std::mutex m_writerMutex;
     std::unique_ptr<FileWriter> m_debugWriter;
 
     std::atomic<bool> m_maxLengthReached{ false };
@@ -206,7 +202,7 @@ private:
 class ScopedDebugBlock
 {
 public:
-    ScopedDebugBlock(uint32_t numSamples);
+    ScopedDebugBlock(AudioDebugger& debugger, uint32_t numSamples);
     ~ScopedDebugBlock();
 
     ScopedDebugBlock(const ScopedDebugBlock&)            = delete;
@@ -214,46 +210,47 @@ public:
     ScopedDebugBlock(ScopedDebugBlock&&)                 = delete;
     ScopedDebugBlock& operator=(ScopedDebugBlock&&)      = delete;
 
-    explicit operator bool() const noexcept { return m_debugger != nullptr; }
+    explicit operator bool() const noexcept { return m_bActive; }
 
     void writeInput(int numSamples, int numChannels, const float* const* buffer)
     {
-        if (m_debugger)
-            m_debugger->pushAllInputSamples(numSamples, numChannels, buffer);
+        if (m_bActive)
+            m_debugger.pushAllInputSamples(numSamples, numChannels, buffer);
     }
 
     void writeInput(int numSamples, const AudioDebugger::SampleAccFunc& f)
     {
-        if (m_debugger)
-            m_debugger->pushInDebugSamples(numSamples, f);
+        if (m_bActive)
+            m_debugger.pushInDebugSamples(numSamples, f);
     }
 
     void writeOutput(int numSamples, int numChannels, const float* const* buffer)
     {
-        if (m_debugger)
-            m_debugger->pushAllOutputSamples(numSamples, numChannels, buffer);
+        if (m_bActive)
+            m_debugger.pushAllOutputSamples(numSamples, numChannels, buffer);
     }
 
     void writeOutput(int numSamples, const AudioDebugger::SampleAccFunc& f)
     {
-        if (m_debugger)
-            m_debugger->pushOutDebugSamples(numSamples, f);
+        if (m_bActive)
+            m_debugger.pushOutDebugSamples(numSamples, f);
     }
 
     void pushMidiEvent(int position, int dataSize, const uint8_t* data);
 
     BlockWriter& metadata() noexcept
     {
-        return m_debugger ? m_debugger->metadataBlock() : m_nullBlock;
+        return m_bActive ? m_debugger.metadataBlock() : m_nullBlock;
     }
 
     BlockWriter& custom() noexcept
     {
-        return m_debugger ? m_debugger->customBlock() : m_nullBlock;
+        return m_bActive ? m_debugger.customBlock() : m_nullBlock;
     }
 
 private:
-    AudioDebugger* m_debugger = nullptr;
+    AudioDebugger& m_debugger;
+    bool m_bActive = false;
     BlockWriter m_nullBlock;
 };
 
