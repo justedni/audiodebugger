@@ -6,7 +6,7 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 
 #include "core/AudioDebug.h"
-#include "core/DebugProcessor.h"
+#include "core/AudioDebugInterface.h"
 
 namespace AudioDebug {
 

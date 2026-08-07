@@ -4,7 +4,7 @@
 #include <juce_core/juce_core.h>
 
 #include "core/AudioDebug.h"
-#include "core/DebugProcessor.h"
+#include "core/AudioDebugInterface.h"
 #include "juce/AudioDebuggerUI.h"
 
 namespace ProjectInfo

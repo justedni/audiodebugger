@@ -6,14 +6,138 @@
 #include <mutex>
 #include <functional>
 #include <variant>
+#include <assert.h>
 
-#include "core/AudioDebugTypes.h"
+#ifndef ensure
+#ifdef _DEBUG
+#define ensure(cond) if (!(cond)) { __debugbreak(); }
+#else
+#define ensure(cond) assert(cond)
+#endif
+#endif
 
 namespace AudioDebug {
 
 class AudioDebugger;
 class DebugProcessor;
-class BlockWriter;
+
+
+enum EMarkerColor : uint8_t
+{
+    Black = 0,
+    PlainGrey,
+    DottedGrey,
+    Red,
+    Blue,
+    Green
+};
+
+enum EMarkerPaintType : uint8_t
+{
+    FullLine = 0,
+    NoLine
+};
+
+enum EBitDepth : uint8_t
+{
+    Int24,
+    Int32,
+    //Int8,  // TODO
+    //Int16, // TODO
+    Count
+};
+
+struct RawMidiMessage
+{
+    uint32_t position = 0;
+    uint8_t dataSize = 0;
+    uint8_t data[3] = { 0, 0, 0 };
+};
+
+class SampleWriter
+{
+public:
+    SampleWriter(uint8_t* dest, size_t maxBytes, uint8_t bitDepth) noexcept;
+
+    void push(int32_t sample) noexcept;
+    void push(float sample) noexcept;
+
+    size_t bytesWritten() const noexcept { return m_pos; }
+
+private:
+    uint8_t* m_dest;
+    size_t m_pos;
+    size_t m_maxBytes;
+    uint8_t m_bitDepth;
+};
+
+using SampleAccFunc = std::function<void(SampleWriter&)>;
+
+
+class BlockWriter
+{
+public:
+    BlockWriter();
+    ~BlockWriter();
+
+    BlockWriter(uint8_t* buffer, size_t capacity, uint8_t bitDepth = 0) noexcept;
+
+    BlockWriter(BlockWriter&& other) noexcept { moveFrom(other); }
+    BlockWriter& operator=(BlockWriter&& other) noexcept;
+
+    BlockWriter(const BlockWriter&) = delete;
+    BlockWriter& operator=(const BlockWriter&) = delete;
+
+    explicit operator bool() const noexcept { return m_data != nullptr; }
+
+    size_t bytesWritten() const noexcept { return m_cursor; }
+    size_t capacity()     const noexcept { return m_capacity; }
+    size_t remaining()    const noexcept { return m_capacity - m_cursor; }
+
+    bool overflowed() const noexcept { return m_overflow; }
+
+    bool append(const void* data, size_t numBytes) noexcept;
+
+    template <class T>
+    bool append(const T& value) noexcept
+    {
+        static_assert(std::is_trivially_copyable<T>::value, "append<T> requires a trivially copyable type");
+        return append(&value, sizeof(T));
+    }
+
+    uint8_t* reserve(size_t numBytes) noexcept;
+
+    template <class Fn>
+    bool writeSamples(const Fn& f) noexcept
+    {
+        if (m_data == nullptr || m_overflow)
+            return false;
+
+        SampleWriter writer(m_data + m_cursor, m_capacity - m_cursor, m_bitDepth);
+        f(writer);
+        m_cursor += writer.bytesWritten();
+        return true;
+    }
+
+    bool commit() noexcept;
+
+private:
+    friend class FileWriter;
+
+    BlockWriter(FileWriter* owner, uint8_t* data, size_t capacity, uint8_t bitDepth) noexcept
+        : m_owner(owner), m_data(data), m_capacity(capacity), m_bitDepth(bitDepth) {}
+
+    void moveFrom(BlockWriter& other) noexcept;
+    void clear() noexcept;
+
+    FileWriter* m_owner = nullptr;
+    uint8_t* m_data  = nullptr;
+    size_t  m_capacity = 0;
+    size_t m_cursor = 0;
+    uint8_t m_bitDepth = 0;
+    bool m_overflow = false;
+};
+
 
 class ScopedDebugBlock
 {
@@ -96,6 +220,21 @@ struct MarkerPair
 };
 
 namespace Metadata {
+
+    enum EMetadataType : uint32_t
+    {
+        INVALID = 0,
+        MARKER_BUFFER_START = 0x54534b4d,   // "MKST"
+        MARKER_TEXT = 0x524b524d,           // "MRKR"
+        MARKER_CUSTOM = 0x434b524d,         // "MRKC"
+    };
+
+    constexpr bool isValidMarker(int magic)
+    {
+        return (magic == MARKER_BUFFER_START)
+            || (magic == MARKER_TEXT)
+            || (magic == MARKER_CUSTOM);
+    }
 
     uint32_t add_uint8(BlockWriter& block, uint8_t num);
     uint32_t add_int8(BlockWriter& block, int8_t num);

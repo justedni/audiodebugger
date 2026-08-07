@@ -4,7 +4,7 @@
 #include "juce/DebuggerSpawner.h"
 
 #include "core/AudioDebugger.h"
-#include "core/DebugProcessor.h"
+#include "core/AudioDebugInterface.h"
 #include "juce/AudioDebuggerUI.h"
 
 namespace AudioDebug {

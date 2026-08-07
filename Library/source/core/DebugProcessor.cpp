@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Vincent Dortel
 // SPDX-License-Identifier: GPL-3.0-or-later
 
-#include "core/DebugProcessor.h"
+#include "core/AudioDebugInterface.h"
 
 #include "core/AudioDebugger.h"
 

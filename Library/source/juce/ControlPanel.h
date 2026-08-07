@@ -7,7 +7,7 @@
 
 namespace AudioDebug {
 
-class DebugParameterBridge;
+class DebugParamInterface;
 class CustomSlider;
 class OptionPanel;
 class AudioDebuggerUI;
@@ -17,7 +17,7 @@ class ControlPanel : public juce::Component
     , public juce::Button::Listener
 {
 public:
-    ControlPanel(AudioDebuggerUI* parent, DebugParameterBridge* parameterBridge);
+    ControlPanel(AudioDebuggerUI* parent, DebugParamInterface* paramInterface);
     ~ControlPanel();
 
     void addOption(uint8_t id, const std::string& displayName, bool defaultEnabled);
@@ -49,7 +49,7 @@ protected:
     std::unique_ptr<OptionPanel> m_paramsPanel;
 
     AudioDebuggerUI* m_parent = nullptr;
-    DebugParameterBridge* m_parameterBridge = nullptr;
+    DebugParamInterface* m_paramInterface = nullptr;
 };
 
 } // namespace AudioDebug

@@ -8,12 +8,63 @@
 #include <mutex>
 #include <string>
 
-#include "core/AudioDebugTypes.h"
+#include "core/AudioDebug.h"
 
 namespace AudioDebug {
 
 struct FileHeader;
+class FileWriter;
 class DebugProcessor;
+enum class BlockType : uint32_t;
+
+namespace FileWriterConfig
+{
+    constexpr size_t queueCapacity = 32;
+    constexpr size_t maxBlockBytes = 128 * 1024 * 2; // Note: this is high on purpose because custom data can be very big
+    constexpr std::chrono::milliseconds flushInterval{ 250 };
+}
+
+class BlockAccumulator
+{
+private:
+public:
+    BlockAccumulator(BlockType type) noexcept
+        : m_type(type)
+    {
+        std::memset(m_buffer, 0, FileWriterConfig::maxBlockBytes);
+    }
+
+    BlockWriter& get() noexcept
+    {
+        if (!m_open)
+        {
+            m_writer = BlockWriter(m_buffer, FileWriterConfig::maxBlockBytes);
+            m_open = true;
+        }
+        return m_writer;
+    }
+
+    bool isOpen()  const noexcept { return m_open; }
+    BlockType type() const noexcept { return m_type; }
+    const uint8_t* buffer() const noexcept { return m_buffer; }
+
+    size_t close(bool& out_overflowed) noexcept
+    {
+        if (!m_open)
+            return 0;
+
+        m_open = false;
+        out_overflowed = m_writer.overflowed();
+        return out_overflowed ? 0 : m_writer.bytesWritten();
+    }
+
+private:
+    const BlockType m_type;
+    BlockWriter m_writer;
+    uint8_t m_buffer[FileWriterConfig::maxBlockBytes];
+    bool m_open = false;
+};
+
 
 class AudioDebugger
 {

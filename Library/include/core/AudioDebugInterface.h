@@ -11,7 +11,7 @@ namespace AudioDebug {
 
 struct RawMidiMessage;
 class AudioDebugger;
-class DebugParameterBridge;
+class DebugParamInterface;
 
 class DebugProcessor
 {
@@ -27,7 +27,7 @@ public:
 	virtual void getStateInformationHook(std::vector<uint8_t>& out_data) { (void)out_data; }
 	virtual void setStateInformationHook(const uint8_t* data, size_t size) { (void)data; (void)size; }
 	virtual uint32_t getStateId() const { return 0; }
-	virtual DebugParameterBridge* getParameterBridge() { return nullptr; }
+	virtual DebugParamInterface* getParameterInterface() { return nullptr; }
 
 	void setCapturePath(const std::string& fullPath);
 	void initDebug(double sampleRate, int samplesPerBlock, int numInputs, int numOutputs, uint8_t bitDepth);
@@ -45,5 +45,17 @@ private:
 
 	std::unique_ptr<AudioDebugger> m_debugger;
 };
+
+class DebugParamInterface
+{
+public:
+	virtual ~DebugParamInterface() {}
+
+	virtual void setFloatParam(uint8_t id, float value) = 0;
+	virtual float getFloatParam(uint8_t id) const = 0;
+	virtual void setBoolParam(uint8_t id, bool bEnabled) = 0;
+	virtual bool getBoolParam(uint8_t id) const = 0;
+};
+
 
 } // namespace AudioDebug

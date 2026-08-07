@@ -4,7 +4,7 @@
 #include "WaveformOverview.h"
 
 #include "core/DebuggerAccess.h"
-#include "core/DebugProcessor.h"
+#include "core/AudioDebugInterface.h"
 #include "core/FileWriter.h"
 #include "juce/Mipmaps.h"
 #include "core/RingBuffer.h"

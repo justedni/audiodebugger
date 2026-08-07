@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include "core/DebugProcessor.h"
+#include "core/AudioDebugInterface.h"
 #include "core/AudioDebugger.h"
 
 namespace AudioDebug {

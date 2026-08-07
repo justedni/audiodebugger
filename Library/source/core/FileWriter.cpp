@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 #include "core/FileWriter.h"
-#include "core/BlockWriter.h"
+
+#include "core/AudioDebugger.h"
 
 #include <assert.h>
 

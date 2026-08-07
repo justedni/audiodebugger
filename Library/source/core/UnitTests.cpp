@@ -2,7 +2,7 @@
 
 #include "core/DebuggerAccess.h"
 #include "core/ReportFile.h"
-#include "core/DebugProcessor.h"
+#include "core/AudioDebugInterface.h"
 
 #include "core/RingBuffer.h"
 #include "core/DiffDetector.h" 

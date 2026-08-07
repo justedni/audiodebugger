@@ -7,23 +7,19 @@ option(AUDIODEBUG_BUILD_JUCE "Build the JUCE UI and helper layer" ON)
 
 set(CORE_INTERFACE
     include/core/AudioDebug.h
-    include/core/AudioDebugTypes.h
-    include/core/BlockWriter.h
-    include/core/DebugParameterBridge.h
-    include/core/DebugProcessor.h
-    include/core/DiffDetector.h
+    include/core/AudioDebugInterface.h
     include/core/RptFileFormat.h
-    include/core/SampleWriter.h
     include/core/UnitTests.h
 )
 
 set(CORE_SOURCE
     source/core/AudioDebug.cpp
+    source/core/AudioDebugger.cpp
     source/core/AudioDebugger.h
-    source/core/BlockWriter.cpp
     source/core/DebuggerAccess.h
     source/core/DebugProcessor.cpp
     source/core/DiffDetector.cpp
+    source/core/DiffDetector.h
     source/core/FileWriter.cpp
     source/core/FileWriter.h
     source/core/ReportFile.cpp

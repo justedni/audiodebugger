@@ -4,7 +4,7 @@
 #include "juce/AudioDebuggerUI.h"
 
 #include "core/DebuggerAccess.h"
-#include "core/DebugProcessor.h"
+#include "core/AudioDebugInterface.h"
 #include "core/ReportFile.h"
 
 #include "juce/CustomSlider.h"
@@ -607,7 +607,7 @@ private:
 AudioDebuggerUI::AudioDebuggerUI(DebugProcessor* processor)
     : m_processor(processor)
 {
-    m_controlPanel.reset(new ControlPanel(this, processor ? processor->getParameterBridge() : nullptr));
+    m_controlPanel.reset(new ControlPanel(this, processor ? processor->getParameterInterface() : nullptr));
 
     m_lookAndFeel.reset(new AudioDebuggerLookAndFeel());
     setLookAndFeel(m_lookAndFeel.get());
