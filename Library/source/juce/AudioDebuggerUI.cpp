@@ -145,6 +145,7 @@ public:
 private:
     AudioDebuggerUI* m_parent = nullptr;
     bool m_optionDarkMode = false;
+    bool m_optionAlwaysOnTop = false;
 };
 
 juce::Colour AudioDebuggerUI::colorIdToJuceColour(uint32_t id) const
@@ -1745,6 +1746,7 @@ juce::PopupMenu MainMenuModel::getMenuForIndex(int menuIndex, const juce::String
     else if (menuIndex == 1)
     {
         menu.addItem(DARKMODE, "Dark mode", true, m_optionDarkMode);
+        menu.addItem(ALWAYSONTOP, "Always on top", true, m_optionAlwaysOnTop);
     }
     else if (menuIndex == 2)
     {
@@ -1779,6 +1781,13 @@ void MainMenuModel::menuItemSelected(int menuItemID, int menuIndex)
         m_optionDarkMode = !m_optionDarkMode;
         m_parent->setUIDarkMode(m_optionDarkMode);
         menuItemsChanged();
+        break;
+    }
+    case ALWAYSONTOP:
+    {
+        m_optionAlwaysOnTop = !m_optionAlwaysOnTop;
+        if (auto* top = m_parent->getTopLevelComponent())
+            top->setAlwaysOnTop(m_optionAlwaysOnTop);
         break;
     }
     case SET_RPT_STATE:

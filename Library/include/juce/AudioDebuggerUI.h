@@ -308,6 +308,7 @@ enum EMenuItemID : uint8_t
     IMPORT_GEN,
     EXPORT,
     DARKMODE,
+    ALWAYSONTOP,
     SET_RPT_STATE,
     SET_GEN_STATE,
 };
