@@ -713,6 +713,7 @@ ControlPanel* AudioDebuggerUI::getControlPanel() const { return m_controlPanel.g
 
 AudioDebugger* AudioDebuggerUI::getDebugger() const
 {
+    assert(m_processor);
     if (m_processor)
         return &DebugProcessor::DebuggerAccess::get(*m_processor);
 
@@ -1493,7 +1494,16 @@ bool AudioDebuggerUI::loadAudioFile(const juce::File& file, bool liveMode)
     m_parentComponent->updateSampleRateDisplay(header.sample_rate);
 
     if (auto* debugger = getDebugger())
+    {
+        m_processor->initDebug(
+            header.sample_rate,
+            header.block_size,
+            header.in_channels,
+            header.out_channels,
+            header.bit_depth);
+
         debugger->setNumInputsOutputs(m_numInputs, m_numOutputs);
+    }
 
     resized();
     refreshChannelBounds();

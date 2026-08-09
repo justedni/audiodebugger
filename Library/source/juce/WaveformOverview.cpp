@@ -366,6 +366,13 @@ void WaveformOverview::updateRegenerateThread(DebugProcessor* processor)
     std::string genFileName;
     pDebugger.startRegenerate(header, processor, genFileName);
 
+    processor->initDebug(
+        header.sample_rate,
+        header.block_size,
+        header.in_channels,
+        header.out_channels,
+        header.bit_depth);
+
     processor->prepareToPlayHook(header.sample_rate, header.block_size);
 
     ReportFile* genFile = nullptr;

@@ -35,6 +35,8 @@ public:
 	void terminateDebugCapture();
 	bool isRegenerating() const;
 	void setDebugInOutCount(uint8_t in_numInputs, uint8_t in_numOutputs);
+	int getDebugInChannels() const;
+	int getDebugOutChannels() const;
 
 	class DebuggerAccess;
 private:

@@ -44,4 +44,7 @@ void DebugProcessor::setDebugInOutCount(uint8_t in_numInputs, uint8_t in_numOutp
 	m_debugger->setNumInputsOutputs(in_numInputs, in_numOutputs);
 }
 
+int DebugProcessor::getDebugInChannels() const { return m_debugger->getNumInputs(); }
+int DebugProcessor::getDebugOutChannels() const { return m_debugger->getNumOutputs(); }
+
 } // namespace AudioDebug

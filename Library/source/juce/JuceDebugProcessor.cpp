@@ -72,6 +72,7 @@ void JuceDebugProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
 {
     m_isPlaying = false;
 
+    assert(!isRegenerating());
     initDebug(
         std::round(sampleRate),
         samplesPerBlock,
@@ -142,7 +143,9 @@ void JuceDebugProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
 
 void JuceDebugProcessor::prepareToPlayHook(double sampleRate, int samplesPerBlock)
 {
-    prepareToPlay(sampleRate, samplesPerBlock);
+    m_isPlaying = false;
+
+    prepareToPlayImpl(sampleRate, samplesPerBlock);
 }
 
 void JuceDebugProcessor::releaseResourcesHook()
