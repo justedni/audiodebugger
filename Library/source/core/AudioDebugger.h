@@ -19,7 +19,7 @@ enum class BlockType : uint32_t;
 
 namespace FileWriterConfig
 {
-    constexpr size_t queueCapacity = 32;
+    constexpr size_t queueCapacity = 64;
     constexpr size_t maxBlockBytes = 128 * 1024 * 2; // Note: this is high on purpose because custom data can be very big
     constexpr std::chrono::milliseconds flushInterval{ 250 };
 }
