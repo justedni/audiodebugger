@@ -366,7 +366,7 @@ void WaveformOverview::updateRegenerateThread(DebugProcessor* processor)
     std::string genFileName;
     pDebugger.startRegenerate(header, processor, genFileName);
 
-    processor->initDebug(
+    processor->startDebugCapture(
         header.sample_rate,
         header.block_size,
         header.in_channels,

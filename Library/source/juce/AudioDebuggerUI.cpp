@@ -1495,13 +1495,6 @@ bool AudioDebuggerUI::loadAudioFile(const juce::File& file, bool liveMode)
 
     if (auto* debugger = getDebugger())
     {
-        m_processor->initDebug(
-            header.sample_rate,
-            header.block_size,
-            header.in_channels,
-            header.out_channels,
-            header.bit_depth);
-
         debugger->setNumInputsOutputs(m_numInputs, m_numOutputs);
     }
 

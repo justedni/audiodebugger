@@ -30,8 +30,7 @@ public:
 	virtual DebugParamInterface* getParameterInterface() { return nullptr; }
 
 	void setCapturePath(const std::string& fullPath);
-	void initDebug(double sampleRate, int samplesPerBlock, int numInputs, int numOutputs, uint8_t bitDepth);
-	void startDebugCapture();
+	void startDebugCapture(double sampleRate, int samplesPerBlock, int numInputs, int numOutputs, uint8_t bitDepth);
 	void terminateDebugCapture();
 	bool isRegenerating() const;
 	void setDebugInOutCount(uint8_t in_numInputs, uint8_t in_numOutputs);

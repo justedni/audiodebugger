@@ -19,13 +19,9 @@ void DebugProcessor::setCapturePath(const std::string& fullPath)
 	m_debugger->setCaptureName(fullPath, false);
 }
 
-void DebugProcessor::initDebug(double sampleRate, int samplesPerBlock, int numInputs, int numOutputs, uint8_t bitDepth)
+void DebugProcessor::startDebugCapture(double sampleRate, int samplesPerBlock, int numInputs, int numOutputs, uint8_t bitDepth)
 {
 	m_debugger->initDebugProcessor(sampleRate, samplesPerBlock, numInputs, numOutputs, bitDepth);
-}
-
-void DebugProcessor::startDebugCapture()
-{
 	m_debugger->prepare(this);
 }
 

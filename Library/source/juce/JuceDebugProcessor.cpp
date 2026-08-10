@@ -72,14 +72,6 @@ void JuceDebugProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
 {
     m_isPlaying = false;
 
-    assert(!isRegenerating());
-    initDebug(
-        std::round(sampleRate),
-        samplesPerBlock,
-        getTotalNumInputChannels(),
-        getTotalNumOutputChannels(),
-        AudioDebug::EBitDepth::Int32);
-
     prepareToPlayImpl(sampleRate, samplesPerBlock);
 }
 
@@ -113,8 +105,13 @@ void JuceDebugProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
             // Useful toggle for MIDI synths to only send data when DAW is playing
             if (m_isPlaying != isPlaying)
             {
-                if (isPlaying) {
-                    startDebugCapture();
+                if (isPlaying)
+                {
+                    startDebugCapture(std::round(getSampleRate()),
+                        getBlockSize(),
+                        getTotalNumInputChannels(),
+                        getTotalNumOutputChannels(),
+                        AudioDebug::EBitDepth::Int32);
                 }
 
                 m_isPlaying = isPlaying;
