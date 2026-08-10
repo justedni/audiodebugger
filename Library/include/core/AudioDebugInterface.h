@@ -36,6 +36,7 @@ public:
 	void setDebugInOutCount(uint8_t in_numInputs, uint8_t in_numOutputs);
 	int getDebugInChannels() const;
 	int getDebugOutChannels() const;
+	void debugBreakSampleId(uint32_t sampleId, bool bForceBreak = false);
 
 	class DebuggerAccess;
 private:

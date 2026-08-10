@@ -461,13 +461,4 @@ int32_t AudioDebugger::getSampleIdInCurrentBuffer(int numSamples, int sampleId, 
 	return m_debugBufferWritePos + sampleId;
 }
 
-
-void AudioDebugger::forceBreakSample(uint16_t currentSampleId)
-{
-	if (m_sampleToDebug == currentSampleId)
-	{
-		__debugbreak();
-	}
-}
-
 } // namespace AudioDebug

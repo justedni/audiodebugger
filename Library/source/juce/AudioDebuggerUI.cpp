@@ -1129,10 +1129,11 @@ void AudioDebuggerUI::mouseMove(const juce::MouseEvent& event)
 {
     currentMousePos = event.position;
 
+    m_sampleAtCursor = getSampleAtPosition(event.getPosition().x);
+
     if (onMouseSampleChanged)
     {
-        int64_t sample = getSampleAtPosition(event.getPosition().x);
-        onMouseSampleChanged(sample);
+        onMouseSampleChanged(m_sampleAtCursor);
     }
 }
 
@@ -1273,20 +1274,19 @@ void AudioDebuggerUI::mouseDown(const juce::MouseEvent& event)
     {
         juce::PopupMenu menu;
 
-        menu.addItem(1, "Debug this sample");
+        menu.addItem(1, "Copy sample ID to clipboard");
+        menu.addItem(2, "Debug this sample");
 
         menu.showMenuAsync(juce::PopupMenu::Options(),
             [&](int result)
             {
                 if (result == 1)
                 {
-                    // TODO
-                    //float currentMousePosX = currentMousePos.getX();
-                    //int32_t currentSampleUnderMouse = coordinates_to_sample_val(currentMousePosX);
-                    //currentSampleUnderMouse = std::max(0, std::min(currentSampleUnderMouse, (int32_t)m_bufferSize));
-                    //AudioDebug::AudioDebugger::get()->setSampleToDebug(currentSampleUnderMouse);
-
-                    //regenerateOutput(currentSampleUnderMouse);
+                    juce::SystemClipboard::copyTextToClipboard(juce::String(m_sampleAtCursor));
+                }
+                else if (result == 2)
+                {
+                    regenerateOutput(m_sampleAtCursor);
                 }
             }
         );
@@ -1403,6 +1403,12 @@ void AudioDebuggerUI::regenerateOutput(int32_t sampleItToDebug)
             m_midiTrack->invalidateCache();
 
         invalidateCustomCache_();
+    }
+
+
+    if (auto* debugger = getDebugger())
+    {
+        debugger->setSampleToDebug(sampleItToDebug);
     }
 
     setGenerationButtonsEnabled(false);

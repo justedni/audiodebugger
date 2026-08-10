@@ -43,4 +43,25 @@ void DebugProcessor::setDebugInOutCount(uint8_t in_numInputs, uint8_t in_numOutp
 int DebugProcessor::getDebugInChannels() const { return m_debugger->getNumInputs(); }
 int DebugProcessor::getDebugOutChannels() const { return m_debugger->getNumOutputs(); }
 
+#pragma optimize("", off)
+void DebugProcessor::debugBreakSampleId(uint32_t sampleId, bool bForceBreak)
+{
+	if (isRegenerating())
+	{
+		const int32_t sampleToDebug = m_debugger->getSampleToDebug();
+		if ((m_debugger->getCurrentBufferTimestamp() + sampleId) == sampleToDebug)
+		{
+			if (bForceBreak)
+			{
+				__debugbreak();
+			}
+			else
+			{
+				bool bAddBreakPointHere = true;
+			}
+		}
+	}
+}
+#pragma optimize("", on)
+
 } // namespace AudioDebug

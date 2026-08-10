@@ -270,6 +270,7 @@ protected:
     int32_t m_repaintedRegenSamples = 0;
 
     juce::Point<int> lastMousePos;
+    int64_t m_sampleAtCursor = 0;
 
     int64_t highlightedDiff = 0;
 

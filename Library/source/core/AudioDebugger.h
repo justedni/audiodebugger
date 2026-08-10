@@ -86,8 +86,6 @@ public:
     bool getAsyncWriterGotDisconnected();
     const std::string& getLastFileName() const;
 
-    void forceBreakSample(uint16_t currentSampleId);
-
     void prepare(DebugProcessor* processor);
     void terminate();
 
@@ -106,7 +104,9 @@ public:
 
     int32_t getCurrentBufferTimestamp() const;
     int32_t getSampleIdInCurrentBuffer(int numSamples, int sampleId, bool lookback, int latencySamples) const;
+
     void setSampleToDebug(int32_t sampleId) { m_sampleToDebug = sampleId; }
+    int32_t getSampleToDebug() const { return m_sampleToDebug; }
 
     uint32_t getInstanceId() const noexcept { return m_instanceId; }
 
