@@ -13,6 +13,12 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     endif()
 endif()
 
+option(AUDIODEBUGGER_BUILD_SAMPLES  "Build Standalone/SamplePlugin/ConsoleSample" ${PROJECT_IS_TOP_LEVEL})
+
 add_subdirectory(Library)
-add_subdirectory(Standalone)
-add_subdirectory(SamplePlugin)
+
+if(AUDIODEBUGGER_BUILD_SAMPLES)
+    add_subdirectory(Standalone)
+    add_subdirectory(SamplePlugin)
+    add_subdirectory(ConsoleSample)
+endif()
