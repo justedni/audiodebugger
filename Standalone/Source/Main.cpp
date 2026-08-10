@@ -15,6 +15,9 @@ namespace ProjectInfo
     const int          versionNumber = 0x10000;
 }
 
+namespace AudioDebug {
+    struct RawMidiMessage;
+}
 
 class DebugProcessorNone : public AudioDebug::DebugProcessor
 {
@@ -23,7 +26,10 @@ public:
         : DebugProcessor()
     {}
 
-    virtual ~DebugProcessorNone() {}
+    ~DebugProcessorNone() override {}
+
+    void prepareToPlayHook(double sampleRate, int samplesPerBlock) override {}
+    void processBlockHook(int numSamples, float** inputs, const std::vector<AudioDebug::RawMidiMessage>& midiMessages) override {}
 };
 
 
