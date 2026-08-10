@@ -29,7 +29,8 @@ public:
 	virtual uint32_t getStateId() const { return 0; }
 	virtual DebugParamInterface* getParameterInterface() { return nullptr; }
 
-	void setCapturePath(const std::string& fullPath);
+	void setCapturePath(const std::string& fullPath, bool bAppendDate = false);
+	void setDebugCaptureEnabled(bool bEnabled);
 	void startDebugCapture(double sampleRate, int samplesPerBlock, int numInputs, int numOutputs, uint8_t bitDepth);
 	void terminateDebugCapture();
 	bool isRegenerating() const;

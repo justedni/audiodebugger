@@ -202,7 +202,7 @@ void AudioDebugger::prepare(DebugProcessor* processor)
 	m_debugBufferWritePos = 0;
 	m_debugBlockCount = 0;
 
-	if (!m_bIsRegenerating)
+	if (!m_bIsRegenerating && m_autoWriteOutputFile)
 	{
 		FileHeader header;
 		header.sample_rate = m_sampleRate;
@@ -212,21 +212,18 @@ void AudioDebugger::prepare(DebugProcessor* processor)
 		header.out_channels = m_numOutputs;
 		header.bit_depth = m_bitDepth;
 
-		if (m_autoWriteOutputFile)
+		std::lock_guard<std::mutex> lock(m_writerMutex);
+
+		m_debugWriter.reset(new FileWriter(m_debugFilepath, header));
+
+		savePluginState(processor);
+
+		m_debugWriterStatusChanged = true;
+
+		if (!m_debugWriter->start())
 		{
-			std::lock_guard<std::mutex> lock(m_writerMutex);
-
-			m_debugWriter.reset(new FileWriter(m_debugFilepath, header));
-
-			savePluginState(processor);
-
-			m_debugWriterStatusChanged = true;
-
-			if (!m_debugWriter->start())
-			{
-				ensure(false);
-				m_debugWriter.reset(nullptr);
-			}
+			ensure(false);
+			m_debugWriter.reset(nullptr);
 		}
 	}
 }

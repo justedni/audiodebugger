@@ -14,9 +14,14 @@ DebugProcessor::DebugProcessor()
 
 DebugProcessor::~DebugProcessor() = default;
 
-void DebugProcessor::setCapturePath(const std::string& fullPath)
+void DebugProcessor::setCapturePath(const std::string& fullPath, bool bAppendDate)
 {
-	m_debugger->setCaptureName(fullPath, false);
+	m_debugger->setCaptureName(fullPath, bAppendDate);
+}
+
+void DebugProcessor::setDebugCaptureEnabled(bool bEnabled)
+{
+	m_debugger->setAutoWriteOutputFile(bEnabled);
 }
 
 void DebugProcessor::startDebugCapture(double sampleRate, int samplesPerBlock, int numInputs, int numOutputs, uint8_t bitDepth)
