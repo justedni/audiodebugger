@@ -373,25 +373,25 @@ ScopedDebugBlock::~ScopedDebugBlock()
 void ScopedDebugBlock::writeInput(int numSamples, int numChannels, const float* const* buffer)
 {
 	if (m_bActive)
-		m_debugger.pushAllInputSamples(numSamples, numChannels, buffer);
+		m_debugger.writeInputFrame(numSamples, numChannels, buffer);
 }
 
 void ScopedDebugBlock::writeInput(int numSamples, const AudioDebugger::SampleAccFunc& f)
 {
 	if (m_bActive)
-		m_debugger.pushInDebugSamples(numSamples, f);
+		m_debugger.writeInputFrame(numSamples, f);
 }
 
 void ScopedDebugBlock::writeOutput(int numSamples, int numChannels, const float* const* buffer)
 {
 	if (m_bActive)
-		m_debugger.pushAllOutputSamples(numSamples, numChannels, buffer);
+		m_debugger.writeOutputFrame(numSamples, numChannels, buffer);
 }
 
 void ScopedDebugBlock::writeOutput(int numSamples, const AudioDebugger::SampleAccFunc& f)
 {
 	if (m_bActive)
-		m_debugger.pushOutDebugSamples(numSamples, f);
+		m_debugger.writeOutputFrame(numSamples, f);
 }
 
 void ScopedDebugBlock::pushMidiEvent(int position, int dataSize, const uint8_t* data)

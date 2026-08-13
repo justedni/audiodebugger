@@ -94,10 +94,10 @@ public:
     using SampleAccFunc = AudioDebug::SampleAccFunc;
     using BlockAddedFunc = std::function<void(uint32_t, const uint8_t*, size_t)>;
 
-    void pushAllInputSamples(int numSamples, int numChannels, const float* const* buffer);
-    void pushAllOutputSamples(int numSamples, int numChannels, const float* const* buffer);
-    void pushInDebugSamples(int numSamples, const SampleAccFunc f);
-    void pushOutDebugSamples(int numSamples, const SampleAccFunc& f);
+    void writeInputFrame(int numSamples, int numChannels, const float* const* buffer);
+    void writeOutputFrame(int numSamples, int numChannels, const float* const* buffer);
+    void writeInputFrame(int numSamples, const SampleAccFunc f);
+    void writeOutputFrame(int numSamples, const SampleAccFunc& f);
     BlockWriter& midiEventBlock() noexcept { return m_midiAccum.get(); }
     BlockWriter& metadataBlock() noexcept { return m_metadataAccum.get(); }
     BlockWriter& customBlock()   noexcept { return m_customAccum.get(); }

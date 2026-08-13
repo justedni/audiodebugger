@@ -289,9 +289,9 @@ bool AudioDebugger::beginFrame(uint32_t numSamples)
 	return true;
 }
 
-void AudioDebugger::pushAllInputSamples(int numSamples, int numChannels, const float* const* buffer)
+void AudioDebugger::writeInputFrame(int numSamples, int numChannels, const float* const* buffer)
 {
-	pushInDebugSamples(numSamples, [&](auto& io)
+	writeInputFrame(numSamples, [&](auto& io)
 	{
 		for (int32_t i = 0; i < numSamples; i++)
 		{
@@ -303,9 +303,9 @@ void AudioDebugger::pushAllInputSamples(int numSamples, int numChannels, const f
 	});
 }
 
-void AudioDebugger::pushAllOutputSamples(int numSamples, int numChannels, const float* const* buffer)
+void AudioDebugger::writeOutputFrame(int numSamples, int numChannels, const float* const* buffer)
 {
-	pushOutDebugSamples(numSamples, [&](auto& io)
+	writeOutputFrame(numSamples, [&](auto& io)
 	{
 		for (int32_t i = 0; i < numSamples; i++)
 		{
@@ -317,7 +317,7 @@ void AudioDebugger::pushAllOutputSamples(int numSamples, int numChannels, const 
 	});
 }
 
-void AudioDebugger::pushInDebugSamples(int numSamples, const SampleAccFunc f)
+void AudioDebugger::writeInputFrame(int numSamples, const SampleAccFunc f)
 {
 	std::lock_guard<std::mutex> lock(m_writerMutex);
 
@@ -334,7 +334,7 @@ void AudioDebugger::pushInDebugSamples(int numSamples, const SampleAccFunc f)
 	//m_debugBufferWritePos += numSamples;
 }
 
-void AudioDebugger::pushOutDebugSamples(int numSamples, const SampleAccFunc& f)
+void AudioDebugger::writeOutputFrame(int numSamples, const SampleAccFunc& f)
 {
 	std::lock_guard<std::mutex> lock(m_writerMutex);
 
