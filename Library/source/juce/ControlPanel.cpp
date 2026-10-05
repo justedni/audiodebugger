@@ -52,25 +52,27 @@ void ControlPanel::setGenerationButtonsEnabled(bool bEnable)
     m_buttonComputeOutput->setEnabled(bEnable);
 }
 
-void ControlPanel::addOption(uint8_t id, const std::string& displayName, bool defaultEnabled)
+void ControlPanel::addOption(uint8_t id, const std::string& displayName, bool defaultEnabled, bool defaultVisible)
 {
     bool bExists = (m_toggleOptions.find(id) != m_toggleOptions.end());
     assert(!bExists);
     if (bExists)
         return;
 
-    m_toggleOptions[id].reset(new juce::ToggleButton());
-    auto& button = m_toggleOptions[id];
+    m_toggleOptions[id] = {};
+    auto& button = m_toggleOptions[id].button;
     button->setButtonText(displayName);
     button->setToggleState(defaultEnabled, juce::NotificationType::dontSendNotification);
     button->addListener(this);
-    m_optionPanel->addElement(button.get());
+    m_optionPanel->addElement(button.get(), defaultVisible);
+
+    m_toggleOptions[id].bVisible = defaultVisible;
 }
 
 bool ControlPanel::isOptionEnabled(uint8_t id) const
 {
     assert(m_toggleOptions.find(id) != m_toggleOptions.end());
-    return m_toggleOptions.at(id)->getToggleState();
+    return m_toggleOptions.at(id).button->getToggleState();
 }
 
 void ControlPanel::addSlider(int id, const CustomSlider& srcSlider, juce::LookAndFeel* lookAndFeel)
@@ -87,7 +89,7 @@ void ControlPanel::addSlider(int id, const CustomSlider& srcSlider, juce::LookAn
         s.setNumDecimalPlacesToDisplay(0);
     s.setTextBoxStyle(juce::Slider::TextBoxRight, false, 70, 20);
     s.addListener(this);
-    m_paramsPanel->addElement(&s);
+    m_paramsPanel->addElement(&s, true);
 }
 
 void ControlPanel::addButton(const juce::String& name)
@@ -98,7 +100,7 @@ void ControlPanel::addButton(const juce::String& name)
 
     auto& btn = m_buttons.back();
     btn.get()->addListener(this);
-    m_paramsPanel->addElement(btn.get());
+    m_paramsPanel->addElement(btn.get(), true);
 }
 
 void ControlPanel::paint(juce::Graphics& g)
@@ -119,7 +121,10 @@ void ControlPanel::resized()
         int groupY = 0;
         for (auto& toggle : m_toggleOptions)
         {
-            toggle.second->setBounds(x, groupY, width, 20);
+            if (!toggle.second.bVisible)
+                continue;
+
+            toggle.second.button->setBounds(x, groupY, width, 20);
             groupY += 20;
         }
     }
@@ -181,7 +186,7 @@ void ControlPanel::buttonClicked(juce::Button* button)
     int id = 0;
     for (auto& toggle : m_toggleOptions)
     {
-        if (button == toggle.second.get())
+        if (button == toggle.second.button.get())
         {
             bHandled = true;
             break;

@@ -32,7 +32,7 @@ class ChannelComponent;
 class WaveformOverview
 {
 public:
-    WaveformOverview();
+    WaveformOverview(DebugProcessor* processor);
     ~WaveformOverview();
 
     void startLiveMonitoring();
@@ -42,7 +42,7 @@ public:
     bool isLiveMonitoring() const { return !shouldStopLiveMonitoring.load(); }
 
     void startOpenGenFile(const juce::String& genFilePath);
-    void startOutputRegeneration(DebugProcessor* processor);
+    void startOutputRegeneration();
 
     bool openRptFile(const juce::String& filePath, double viewportZoomLevel, float viewportWidth, bool liveMode);
     void openGenFile(const juce::String& filePath);
@@ -86,6 +86,8 @@ protected:
     std::unique_ptr<ReportFile> m_genFile;
 
 private:
+    DebugProcessor* m_processor = nullptr;
+
     bool disableRefBlocks = false;
 
     std::unique_ptr<juce::Thread> m_backgroundThread;
@@ -98,7 +100,7 @@ private:
     std::unique_ptr<MipmapBuilder> m_mipmaps;
     std::unique_ptr<MarkerStore> m_markers;
 
-    void updateRegenerateThread(DebugProcessor* processor);
+    void updateRegenerateThread();
 };
 
 } // namespace AudioDebug

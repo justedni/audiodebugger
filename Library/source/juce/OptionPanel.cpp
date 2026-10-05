@@ -92,10 +92,12 @@ void OptionPanel::resized()
     m_content.setBounds(bounds);
 }
 
-void OptionPanel::addElement(juce::Component* comp)
+void OptionPanel::addElement(juce::Component* comp, bool defaultVisible)
 {
     m_content.addAndMakeVisible(comp);
-    m_contentHeight += 20;
+
+    if (defaultVisible)
+        m_contentHeight += 20;
 }
 
 } // namespace AudioDebug

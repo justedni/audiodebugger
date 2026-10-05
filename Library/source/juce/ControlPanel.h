@@ -20,7 +20,7 @@ public:
     ControlPanel(AudioDebuggerUI* parent, DebugParamInterface* paramInterface);
     ~ControlPanel();
 
-    void addOption(uint8_t id, const std::string& displayName, bool defaultEnabled);
+    void addOption(uint8_t id, const std::string& displayName, bool defaultEnabled, bool defaultVisible);
     bool isOptionEnabled(uint8_t id) const;
 
     void addSlider(int id, const CustomSlider& srcSlider, juce::LookAndFeel* lookAndFeel);
@@ -39,7 +39,17 @@ public:
 
     void setGenerationButtonsEnabled(bool bEnabled);
 protected:
-    std::map<uint8_t, std::unique_ptr<juce::ToggleButton>> m_toggleOptions;
+    struct Option
+    {
+        Option()
+        {
+            button.reset(new juce::ToggleButton());
+        }
+
+        std::unique_ptr<juce::ToggleButton> button;
+        bool bVisible = true;
+    };
+    std::map<uint8_t, Option> m_toggleOptions;
 
     std::unique_ptr<juce::TextButton> m_buttonComputeOutput;
     std::vector<CustomSlider*> m_sliders;

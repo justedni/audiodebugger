@@ -15,7 +15,7 @@ public:
 
     void resized() override;
 
-    void addElement(juce::Component* comp);
+    void addElement(juce::Component* comp, bool defaultVisible);
 
     void setExpanded(bool shouldBeExpanded);
     int getPreferredHeight() const;

@@ -614,10 +614,10 @@ AudioDebuggerUI::AudioDebuggerUI(DebugProcessor* processor)
     setLookAndFeel(m_lookAndFeel.get());
     m_controlPanel->setPanelLookAndFeel(m_lookAndFeel.get());
 
-    m_controlPanel->addOption(EDefaultOptions::BufferStartMarkers, "Buffer start markers", true);
-    m_controlPanel->addOption(EDefaultOptions::CustomMarkers, "Custom markers", true);
-    m_controlPanel->addOption(EDefaultOptions::SamplesAsRects, "Samples as rectangles", true);
-    m_controlPanel->addOption(EDefaultOptions::SampleValues, "Sample values", true);
+    m_controlPanel->addOption(EDefaultOptions::BufferStartMarkers, "Buffer start markers", true, true);
+    m_controlPanel->addOption(EDefaultOptions::CustomMarkers, "Custom markers", true, true);
+    m_controlPanel->addOption(EDefaultOptions::SamplesAsRects, "Samples as rectangles", true, true);
+    m_controlPanel->addOption(EDefaultOptions::SampleValues, "Sample values", true, true);
 
     zoomVSlider.reset(new juce::Slider(juce::Slider::SliderStyle::LinearVertical, juce::Slider::TextBoxBelow));
     zoomVSlider->setRange(1, 40, 0);
@@ -720,9 +720,9 @@ AudioDebugger* AudioDebuggerUI::getDebugger() const
     return nullptr;
 }
 
-void AudioDebuggerUI::addControlPanelOption(uint8_t id, const std::string& displayName, bool defaultEnabled)
+void AudioDebuggerUI::addControlPanelOption(uint8_t id, const std::string& displayName, bool defaultEnabled, bool defaultVisible)
 {
-    getControlPanel()->addOption(id, displayName, defaultEnabled);
+    getControlPanel()->addOption(id, displayName, defaultEnabled, defaultVisible);
 }
 
 void AudioDebuggerUI::addControlPanelButton(const juce::String& name)
@@ -1412,7 +1412,7 @@ void AudioDebuggerUI::regenerateOutput(int32_t sampleItToDebug)
     }
 
     setGenerationButtonsEnabled(false);
-    overview->startOutputRegeneration(m_processor);
+    overview->startOutputRegeneration();
 }
 
 bool AudioDebuggerUI::loadAudioFile(const juce::File& file, bool liveMode)
@@ -1430,7 +1430,7 @@ bool AudioDebuggerUI::loadAudioFile(const juce::File& file, bool liveMode)
         diffMaskPreset = oldDiffDetector->getMaskPreset();
     }
 
-    overview.reset(new WaveformOverview());
+    overview.reset(new WaveformOverview(m_processor));
 
     zoomLevel = 1.0;
 

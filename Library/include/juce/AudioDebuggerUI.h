@@ -91,7 +91,7 @@ public:
     void terminate();
 
     // ------------------------
-    void addControlPanelOption(uint8_t id, const std::string& displayName, bool defaultEnabled);
+    void addControlPanelOption(uint8_t id, const std::string& displayName, bool defaultEnabled, bool defaultVisible = true);
     void addControlPanelButton(const juce::String& name);
     void addControlPanelSlider(int id, const CustomSlider& srcSlider, juce::LookAndFeel* lookAndFeel);
     void addComponentToControlPanel(juce::Component* component);

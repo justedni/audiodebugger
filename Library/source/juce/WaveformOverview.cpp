@@ -16,8 +16,9 @@
 
 namespace AudioDebug {
 
-WaveformOverview::WaveformOverview()
-    : totalSamples(0)
+WaveformOverview::WaveformOverview(DebugProcessor* processor)
+    : m_processor(processor)
+    , totalSamples(0)
     , sampleRate(0)
     , bitsPerSample(0)
     , m_diffDetector(new DiffDetector())
@@ -230,27 +231,25 @@ void WaveformOverview::startOpenGenFile(const juce::String& genFilePath)
     m_backgroundThread->startThread();
 }
 
-void WaveformOverview::startOutputRegeneration(DebugProcessor* processor)
+void WaveformOverview::startOutputRegeneration()
 {
     class RegenerationThread : public juce::Thread {
     public:
-        RegenerationThread(WaveformOverview* owner, DebugProcessor* proc)
+        RegenerationThread(WaveformOverview* owner)
             : juce::Thread("RegenerationThread")
             , overview(owner)
-            , processor(proc)
         {}
 
         void run() override
         {
-            overview->updateRegenerateThread(processor);
+            overview->updateRegenerateThread();
         }
 
     private:
         WaveformOverview* overview;
-        DebugProcessor* processor;
     };
 
-    m_backgroundThread = std::make_unique<RegenerationThread>(this, processor);
+    m_backgroundThread = std::make_unique<RegenerationThread>(this);
     m_backgroundThread->startThread();
 }
 
@@ -336,14 +335,14 @@ void WaveformOverview::openGenFile(const juce::String& filePath)
     m_loadingProgress = 100;
 }
 
-void WaveformOverview::updateRegenerateThread(DebugProcessor* processor)
+void WaveformOverview::updateRegenerateThread()
 {
     disableRefBlocks = true;
     m_bIsLoading = true;
     m_loadingProgress = 0;
     m_regenSamplesProcessed = 0;
 
-    auto& pDebugger = DebugProcessor::DebuggerAccess::get(*processor);
+    auto& pDebugger = DebugProcessor::DebuggerAccess::get(*m_processor);
     //pDebugger->setSampleToDebug(sampleItToDebug);
 
     ReadBlock block;
@@ -364,16 +363,16 @@ void WaveformOverview::updateRegenerateThread(DebugProcessor* processor)
         tempInPtrs.push_back(const_cast<float*>(buff.data()));
 
     std::string genFileName;
-    pDebugger.startRegenerate(header, processor, genFileName);
+    pDebugger.startRegenerate(header, m_processor, genFileName);
 
-    processor->startDebugCapture(
+    m_processor->startDebugCapture(
         header.sample_rate,
         header.block_size,
         header.in_channels,
         header.out_channels,
         header.bit_depth);
 
-    processor->prepareToPlayHook(header.sample_rate, header.block_size);
+    m_processor->prepareToPlayHook(header.sample_rate, header.block_size);
 
     ReportFile* genFile = nullptr;
     {
@@ -382,7 +381,7 @@ void WaveformOverview::updateRegenerateThread(DebugProcessor* processor)
             genFile = new ReportFile(ReportFile::EFileSlot::Gen, file.getFullPathName().toStdString());
     }
 
-    const int latencySamples = processor->getLatencySamples(header.block_size);
+    const int latencySamples = m_processor->getLatencySamples(header.block_size);
 
     AudioRingBuffer** refOutChannelsCache = new AudioRingBuffer * [numOutChannels];
     AudioRingBuffer** genOutChannelsCache = new AudioRingBuffer*[numOutChannels];
@@ -470,7 +469,7 @@ void WaveformOverview::updateRegenerateThread(DebugProcessor* processor)
  
     auto processBuffer = [&]()
     {
-        processor->processBlockHook(numberOfSamplesPerBlock, tempInPtrs.data(), localMidiMessages);
+        m_processor->processBlockHook(numberOfSamplesPerBlock, tempInPtrs.data(), localMidiMessages);
         samplesProcessed += numberOfSamplesPerBlock;
     };
 
