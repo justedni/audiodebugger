@@ -201,10 +201,15 @@ public:
             m_audioDebugger->setRptFileMaxLength(value);
         };
 
-        m_scrollbar.reset(new juce::ScrollBar(false));
-        m_scrollbar->setAutoHide(false);
-        m_scrollbar->addListener(this);
-        addAndMakeVisible(m_scrollbar.get());
+        m_hScrollbar.reset(new juce::ScrollBar(false));
+        m_hScrollbar->setAutoHide(false);
+        m_hScrollbar->addListener(this);
+        addAndMakeVisible(m_hScrollbar.get());
+
+        m_vScrollbar.reset(new juce::ScrollBar(true));
+        m_vScrollbar->setAutoHide(false);
+        m_vScrollbar->addListener(this);
+        addAndMakeVisible(m_vScrollbar.get());
 
         m_controlPanel = audioDebugger->getControlPanel();
         addAndMakeVisible(m_controlPanel);
@@ -221,14 +226,22 @@ public:
         m_sampleIdLabel.setText("Sample: ---", juce::dontSendNotification);
         addAndMakeVisible(m_sampleIdLabel);
 
-        zoomSlider.reset(new juce::Slider());
-        zoomSlider->setRange(1.0, audioDebugger->getMaxZoom(), 0.0);
-        zoomSlider->setValue(1.0);
-        zoomSlider->setSkewFactorFromMidPoint(100.0);
-        zoomSlider->setTextBoxStyle(juce::Slider::NoTextBox, false, 100, 30);
+        m_hZoomSlider.reset(new juce::Slider());
+        m_hZoomSlider->setRange(1.0, audioDebugger->getMaxZoom(), 0.0);
+        m_hZoomSlider->setValue(1.0);
+        m_hZoomSlider->setSkewFactorFromMidPoint(100.0);
+        m_hZoomSlider->setTextBoxStyle(juce::Slider::NoTextBox, false, 100, 30);
         //zoomSlider->setLookAndFeel(m_lookAndFeel.get());
-        zoomSlider->onValueChange = [this] { m_audioDebugger->setZoomLevel(zoomSlider->getValue()); };
-        addAndMakeVisible(zoomSlider.get());
+        m_hZoomSlider->onValueChange = [this] { m_audioDebugger->setZoomLevel(m_hZoomSlider->getValue()); };
+        addAndMakeVisible(m_hZoomSlider.get());
+
+        m_vZoomSlider.reset(new juce::Slider(juce::Slider::SliderStyle::LinearVertical, juce::Slider::NoTextBox));
+        m_vZoomSlider->setRange(1, 40, 0);
+        m_vZoomSlider->setValue(1.0);
+        m_vZoomSlider->setTextBoxStyle(juce::Slider::NoTextBox, false, 30, 20);
+        //zoomSliderV->setLookAndFeel(m_lookAndFeel.get());
+        m_vZoomSlider->onValueChange = [this] { m_audioDebugger->repaint(); };
+        addAndMakeVisible(m_vZoomSlider.get());
 
         addAndMakeVisible(m_zoomLabel);
         m_zoomLabel.setFont(juce::Font(14.0f, juce::Font::bold));
@@ -291,7 +304,8 @@ public:
 
     void init()
     {
-        zoomSlider->setValue(1.0, juce::dontSendNotification);
+        m_hZoomSlider->setValue(1.0, juce::dontSendNotification);
+        m_vZoomSlider->setValue(1.0, juce::dontSendNotification);
     }
 
     void resized() override
@@ -301,6 +315,8 @@ public:
         auto scrollBarArea = bounds.removeFromBottom(18);
         auto bottomBarBounds = bounds.removeFromBottom(20);
         auto panelArea = bounds.removeFromRight(150);
+        auto vStripArea = bounds.removeFromRight(20);
+        auto vZoomArea = vStripArea.removeFromBottom(120);
 
         m_menuBar->setBounds(menuBarBounds);
         m_autoConnectButton->setBounds(menuBarBounds.removeFromRight(120).reduced(2));
@@ -308,11 +324,14 @@ public:
         m_writeLengthSlider.setBounds(menuBarBounds.removeFromRight(140).reduced(2));
         m_autoWriteButton.setBounds(menuBarBounds.removeFromRight(60).reduced(2));
 
-        m_scrollbar->setBounds(scrollBarArea);
+        m_hScrollbar->setBounds(scrollBarArea);
         m_controlPanel->setBounds(panelArea);
 
+        m_vScrollbar->setBounds(vStripArea.withSizeKeepingCentre(18, vStripArea.getHeight()));
+        m_vZoomSlider->setBounds(vZoomArea);
+
         m_zoomLabel.setBounds(bottomBarBounds.removeFromLeft(56));
-        zoomSlider->setBounds(bottomBarBounds.removeFromLeft(300));
+        m_hZoomSlider->setBounds(bottomBarBounds.removeFromLeft(300));
         m_zoomText.setBounds(bottomBarBounds.removeFromLeft(340));
         bottomBarBounds.removeFromLeft(20);
         m_trackHeightLabel.setBounds(bottomBarBounds.removeFromLeft(60));
@@ -339,19 +358,23 @@ public:
 
     void scrollBarMoved(juce::ScrollBar* scrollBar, double newRangeStart) override
     {
-        if (scrollBar == m_scrollbar.get())
+        if (scrollBar == m_hScrollbar.get())
         {
-            m_audioDebugger->scrollBarMoved(newRangeStart);
+            m_audioDebugger->horizontalScrollBarMoved(newRangeStart);
 
-            m_scrollbar->setCurrentRangeStart((double)newRangeStart, juce::dontSendNotification);
+            m_hScrollbar->setCurrentRangeStart((double)newRangeStart, juce::dontSendNotification);
 
             repaint();
+        }
+        else if (scrollBar == m_vScrollbar.get())
+        {
+            m_audioDebugger->verticalScrollBarMoved(newRangeStart);
         }
     }
 
     void setZoomLevel(double value)
     {
-        zoomSlider->setValue(value, juce::dontSendNotification);
+        m_hZoomSlider->setValue(value, juce::dontSendNotification);
     }
 
     void setZoomText(double zoomLevel, double verticalZoom, bool bIsUsingMipmaps, int mipmapLevel, double samplesPerPixel)
@@ -417,7 +440,8 @@ public:
 
     MainMenuModel* getMenuBarModel() const { return m_menuBarModel.get(); }
     AutoConnectButton* getAutoConnectButton() const { return m_autoConnectButton.get(); }
-    juce::ScrollBar* getScrollbar() const { return m_scrollbar.get(); }
+    juce::ScrollBar* getHorizontalScrollbar() const { return m_hScrollbar.get(); }
+    juce::ScrollBar* getVerticalScrollbar() const { return m_vScrollbar.get(); }
     ControlPanel* getControlPanel() const { return m_controlPanel; }
 
     int getDiffThreshold() const { return m_diffThresholdSlider.getValue(); }
@@ -427,6 +451,13 @@ public:
 
     int getRptFileMaxLength() const { return std::round(m_writeLengthSlider.getValue()); }
     void setRptFileMaxLength(int numSeconds) { m_writeLengthSlider.setValue(static_cast<double>(numSeconds), juce::dontSendNotification); }
+
+    double getGlobalVerticalZoom() const { return m_vZoomSlider->getValue(); }
+    void setVerticalZoomDelta(float deltaY)
+    {
+        auto currZoomVal = m_vZoomSlider->getValue();
+        m_vZoomSlider->setValue(currZoomVal + deltaY, juce::NotificationType::dontSendNotification);
+    }
 
 private:
     AudioDebuggerUI* m_audioDebugger = nullptr;
@@ -439,7 +470,8 @@ private:
     std::unique_ptr<AutoConnectButton> m_autoConnectButton;
 
     juce::Label m_zoomLabel;
-    std::unique_ptr<juce::Slider> zoomSlider;
+    std::unique_ptr<juce::Slider> m_hZoomSlider;
+    std::unique_ptr<juce::Slider> m_vZoomSlider;
     juce::Label m_zoomText;
     juce::Label m_sampleRateLabel;
     juce::Label m_sampleIdLabel;
@@ -453,7 +485,8 @@ private:
     std::unique_ptr<juce::TextButton> m_buttonNextDiff;
     std::unique_ptr<juce::TextButton> m_buttonDiffRefresh;
 
-    std::unique_ptr<juce::ScrollBar> m_scrollbar;
+    std::unique_ptr<juce::ScrollBar> m_hScrollbar;
+    std::unique_ptr<juce::ScrollBar> m_vScrollbar;
     ControlPanel* m_controlPanel = nullptr;
 };
 
@@ -602,16 +635,6 @@ AudioDebuggerUI::AudioDebuggerUI(DebugProcessor* processor)
     m_controlPanel->addOption(EDefaultOptions::SamplesAsRects, "Samples as rectangles", true, true);
     m_controlPanel->addOption(EDefaultOptions::SampleValues, "Sample values", true, true);
 
-    zoomVSlider.reset(new juce::Slider(juce::Slider::SliderStyle::LinearVertical, juce::Slider::TextBoxBelow));
-    zoomVSlider->setRange(1, 40, 0);
-    zoomVSlider->setValue(1);
-    zoomVSlider->setNumDecimalPlacesToDisplay(0);
-    zoomVSlider->setTextBoxStyle(juce::Slider::TextBoxBelow, false, 30, 20);
-    zoomVSlider->addListener(this);
-    zoomVSlider->setLookAndFeel(m_lookAndFeel.get());
-    zoomVSlider->setColour(juce::Slider::backgroundColourId, juce::Colours::grey.withAlpha(0.5f));
-    addAndMakeVisible(zoomVSlider.get());
-
     if (auto* debugger = getDebugger())
     {
         m_numInputs = debugger->getNumInputs();
@@ -623,7 +646,7 @@ AudioDebuggerUI::AudioDebuggerUI(DebugProcessor* processor)
     auto viewport = std::make_unique<ChannelViewport>();
     viewport->onVisibleAreaChanged = [this] { channelLayoutChanged(); };
     viewport->setViewedComponent(m_channelList.get(), false);
-    viewport->setScrollBarsShown(true, false);
+    viewport->setScrollBarsShown(false, false, true, false);
     m_viewport = std::move(viewport);
     addAndMakeVisible(m_viewport.get());
 
@@ -701,6 +724,11 @@ AudioDebugger* AudioDebuggerUI::getDebugger() const
         return &DebugProcessor::DebuggerAccess::get(*m_processor);
 
     return nullptr;
+}
+
+double AudioDebuggerUI::getGlobalVerticalZoom() const
+{
+    return m_parentComponent->getGlobalVerticalZoom();
 }
 
 void AudioDebuggerUI::addControlPanelOption(uint8_t id, const std::string& displayName, bool defaultEnabled, bool defaultVisible)
@@ -866,6 +894,7 @@ float AudioDebuggerUI::getChannelCentreY(int globalChanId) const
 
 void AudioDebuggerUI::channelLayoutChanged()
 {
+    syncVerticalScrollbar();
     onChannelLayoutChanged();
 
     if (m_overlay)
@@ -943,7 +972,7 @@ void AudioDebuggerUI::paint(juce::Graphics& g)
 
     {
         double samplesPerPixel = viewportLengthSamples / (double)getWidth();
-        const double verticalZoom = zoomVSlider->getValue();
+        const double verticalZoom = m_parentComponent->getGlobalVerticalZoom();
         const int mipmapLevel = overview->getMipMapBuilder()->selectBestLevel(samplesPerPixel, 0);
         const bool bIsUsingMipmaps = (samplesPerPixel > RAW_SAMPLE_THRESHOLD);
         m_parentComponent->setZoomText(zoomLevel, verticalZoom, bIsUsingMipmaps, mipmapLevel, samplesPerPixel);
@@ -972,8 +1001,6 @@ void AudioDebuggerUI::resized()
 {
     auto bounds = getLocalBounds();
 
-    zoomVSlider->setBounds(getWidth() - 20, getHeight() - 100, 20, 100);
-
     if (m_viewport)
     {
         m_viewport->setBounds(bounds);
@@ -990,17 +1017,11 @@ void AudioDebuggerUI::resized()
         m_overlay->setBounds(bounds);
         m_overlay->toFront(false);
     }
+
+    syncVerticalScrollbar();
 }
 
-void AudioDebuggerUI::sliderValueChanged(juce::Slider* slider)
-{
-    if (slider == zoomVSlider.get())
-    {
-        repaint();
-    }
-}
-
-void AudioDebuggerUI::scrollBarMoved(double newRangeStart)
+void AudioDebuggerUI::horizontalScrollBarMoved(double newRangeStart)
 {
     if (!overview)
         return;
@@ -1017,6 +1038,25 @@ void AudioDebuggerUI::scrollBarMoved(double newRangeStart)
         (double)overview->getTotalSamples();
 
     repaint();
+}
+
+void AudioDebuggerUI::verticalScrollBarMoved(double newRangeStart)
+{
+    if (m_viewport)
+        m_viewport->setViewPosition(m_viewport->getViewPositionX(), juce::roundToInt(newRangeStart));
+}
+
+void AudioDebuggerUI::syncVerticalScrollbar()
+{
+    if (m_parentComponent == nullptr || !m_viewport || !m_channelList)
+        return;
+
+    auto* scrollbar = m_parentComponent->getVerticalScrollbar();
+    const double contentHeight = (double)juce::jmax(1, m_channelList->getHeight());
+    const double visibleHeight = (double)juce::jmax(1, m_viewport->getViewHeight());
+
+    scrollbar->setRangeLimits(0.0, contentHeight, juce::dontSendNotification);
+    scrollbar->setCurrentRange((double)m_viewport->getViewPositionY(), visibleHeight, juce::dontSendNotification);
 }
 
 void AudioDebuggerUI::autoConnectToLastFile()
@@ -1181,8 +1221,7 @@ void AudioDebuggerUI::mouseWheelMove(const juce::MouseEvent& event, const juce::
         }
         else if (modifiers.isShiftDown())
         {
-            auto currZoomVal = zoomVSlider->getValue();
-            zoomVSlider->setValue(currZoomVal + wheel.deltaY, juce::NotificationType::dontSendNotification);
+            m_parentComponent->setVerticalZoomDelta(wheel.deltaY);
             repaint();
         }
         else
@@ -1209,7 +1248,7 @@ void AudioDebuggerUI::mouseWheelMove(const juce::MouseEvent& event, const juce::
 
             repaint();
 
-            m_parentComponent->getScrollbar()->setCurrentRange((double)viewportStartSample, (double)(viewportLengthSamples), juce::dontSendNotification);
+            m_parentComponent->getHorizontalScrollbar()->setCurrentRange((double)viewportStartSample, (double)(viewportLengthSamples), juce::dontSendNotification);
         }
     }
 }
@@ -1242,7 +1281,7 @@ void AudioDebuggerUI::setNewStartSample(int64_t newStartSample)
     viewportCenter = (viewportStartSample + viewportLengthSamples / 2) /
         (double)overview->getTotalSamples();
 
-    m_parentComponent->getScrollbar()->setCurrentRangeStart((double)viewportStartSample, juce::dontSendNotification);
+    m_parentComponent->getHorizontalScrollbar()->setCurrentRangeStart((double)viewportStartSample, juce::dontSendNotification);
 }
 
 bool AudioDebuggerUI::isSampleWithinVisibleRange(int64_t sampleId)
@@ -1417,7 +1456,6 @@ bool AudioDebuggerUI::loadAudioFile(const juce::File& file, bool liveMode)
     zoomLevel = 1.0;
 
     m_parentComponent->init();
-    zoomVSlider->setValue(1.0, juce::dontSendNotification);
     viewportCenter = 0.5;
 
     auto* diffDetector = overview->getDiffDetector();
@@ -1566,7 +1604,7 @@ void AudioDebuggerUI::updateVisibleRange()
     }
     viewportStartSample = std::max((int64_t)0, viewportStartSample);
 
-    auto* scrollbar = m_parentComponent->getScrollbar();
+    auto* scrollbar = m_parentComponent->getHorizontalScrollbar();
     scrollbar->setRangeLimits(0.0, (double)totalSamples, juce::dontSendNotification);
     scrollbar->setCurrentRange((double)viewportStartSample, (double)(viewportLengthSamples), juce::dontSendNotification);
 }

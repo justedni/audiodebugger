@@ -63,7 +63,6 @@ public:
 };
 
 class AudioDebuggerUI : public juce::Component
-                      , public juce::Slider::Listener
                       , public juce::Timer
 {
 public:
@@ -108,8 +107,9 @@ public:
     void paint(juce::Graphics& g) override;
 
     void resized() override;
-    void sliderValueChanged(juce::Slider* slider) override;
-    void scrollBarMoved(double newRangeStart);
+    void horizontalScrollBarMoved(double newRangeStart);
+    void verticalScrollBarMoved(double newRangeStart);
+    void syncVerticalScrollbar();
 
     int64_t pixelToSample(float x, float componentWidth) const;
     float sampleToPixel(int64_t sample, float componentWidth) const;
@@ -164,7 +164,7 @@ public:
 
     int64_t getViewportStartSample() const { return viewportStartSample; }
     int64_t getViewportLengthSamples() const { return viewportLengthSamples; }
-    double getGlobalVerticalZoom() const { return zoomVSlider->getValue(); }
+    double getGlobalVerticalZoom() const;
     double getSamplesPerPixel() const { return viewportLengthSamples / (double)getWidth(); }
     uint8_t getNumInputs() const { return m_numInputs; }
     uint8_t getNumOutputs() const { return m_numOutputs; }
@@ -183,8 +183,6 @@ protected:
 
     std::unique_ptr<AudioDebuggerLookAndFeel> m_lookAndFeel;
     std::unique_ptr<juce::FileChooser> m_fileChooser;
-
-    std::unique_ptr<juce::Slider> zoomVSlider;
 
     float m_percentageLoaded = 0.0f;
     bool m_isRegenerating = false;
