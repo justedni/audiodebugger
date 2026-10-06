@@ -243,11 +243,6 @@ public:
         m_vZoomSlider->onValueChange = [this] { m_audioDebugger->repaint(); };
         addAndMakeVisible(m_vZoomSlider.get());
 
-        addAndMakeVisible(m_zoomLabel);
-        m_zoomLabel.setFont(juce::Font(14.0f, juce::Font::bold));
-        m_zoomLabel.setJustificationType(juce::Justification::centredLeft);
-        m_zoomLabel.setText("H-Zoom:", juce::dontSendNotification);
-
         addAndMakeVisible(m_zoomText);
         m_zoomText.setFont(juce::Font(14.0f, juce::Font::bold));
         m_zoomText.setJustificationType(juce::Justification::centredLeft);
@@ -260,7 +255,8 @@ public:
 
         addAndMakeVisible(m_trackHeightSlider);
         m_trackHeightSlider.setRange((double)AudioDebuggerUI::MIN_TRACK_HEIGHT,
-                                     (double)AudioDebuggerUI::MAX_TRACK_HEIGHT, 5.0);
+                                     (double)AudioDebuggerUI::MAX_TRACK_HEIGHT,
+                                     (double)AudioDebuggerUI::TRACK_HEIGHT_STEP);
         m_trackHeightSlider.setValue((double)audioDebugger->getTrackHeight(), juce::dontSendNotification);
         m_trackHeightSlider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 40, 20);
         m_trackHeightSlider.onValueChange = [this]
@@ -324,14 +320,13 @@ public:
         m_writeLengthSlider.setBounds(menuBarBounds.removeFromRight(140).reduced(2));
         m_autoWriteButton.setBounds(menuBarBounds.removeFromRight(60).reduced(2));
 
+        m_hZoomSlider->setBounds(scrollBarArea.removeFromRight(150));
         m_hScrollbar->setBounds(scrollBarArea);
         m_controlPanel->setBounds(panelArea);
 
         m_vScrollbar->setBounds(vStripArea.withSizeKeepingCentre(18, vStripArea.getHeight()));
         m_vZoomSlider->setBounds(vZoomArea);
 
-        m_zoomLabel.setBounds(bottomBarBounds.removeFromLeft(56));
-        m_hZoomSlider->setBounds(bottomBarBounds.removeFromLeft(300));
         m_zoomText.setBounds(bottomBarBounds.removeFromLeft(340));
         bottomBarBounds.removeFromLeft(20);
         m_trackHeightLabel.setBounds(bottomBarBounds.removeFromLeft(60));
@@ -389,7 +384,7 @@ public:
         else
             zoomLevelText = juce::String((int)(zoomLevel / 1000.0)) + "k";
 
-        juce::String info = zoomLevelText;
+        juce::String info = "H-Zoom: " + zoomLevelText;
         info += " | V-Zoom: " + juce::String(verticalZoom, 1) + "x";
         if (bIsUsingMipmaps)
         {
@@ -444,6 +439,11 @@ public:
     juce::ScrollBar* getVerticalScrollbar() const { return m_vScrollbar.get(); }
     ControlPanel* getControlPanel() const { return m_controlPanel; }
 
+    void setTrackHeightSliderValue(int heightPx)
+    {
+        m_trackHeightSlider.setValue((double)heightPx, juce::dontSendNotification);
+    }
+
     int getDiffThreshold() const { return m_diffThresholdSlider.getValue(); }
 
     bool getAutoWriteRptFile() const { return m_autoWriteButton.getToggleState(); }
@@ -469,7 +469,6 @@ private:
     juce::Label m_secondsLabel;
     std::unique_ptr<AutoConnectButton> m_autoConnectButton;
 
-    juce::Label m_zoomLabel;
     std::unique_ptr<juce::Slider> m_hZoomSlider;
     std::unique_ptr<juce::Slider> m_vZoomSlider;
     juce::Label m_zoomText;
@@ -519,7 +518,7 @@ public:
         setSize(getWidth(), 0);
     }
 
-    void addTrack(juce::String name, TrackComponent* track, juce::Colour accent)
+    CollapsibleChannel* addTrack(juce::String name, TrackComponent* track, juce::Colour accent)
     {
         auto cc = std::make_unique<CollapsibleChannel>(name, track, accent);
         cc->setTrackHeight(m_trackHeight);
@@ -530,6 +529,42 @@ public:
         addAndMakeVisible(*cc);
         m_channels.push_back(std::move(cc));
         resized();
+
+        return raw;
+    }
+
+    bool setTrackVisible(CollapsibleChannel* channel, bool bVisible)
+    {
+        if (channel && channel->isVisible() != bVisible)
+        {
+            channel->setVisible(bVisible);
+            resized();
+            return true;
+        }
+
+        return false;
+    }
+
+    int computeFittingTrackHeight(int availableHeight)
+    {
+        int total = 0;
+        int numExpanded = 0;
+
+        for (auto& c : m_channels)
+        {
+            if (!c->isVisible())
+                continue;
+
+            total += c->getPreferredHeight();
+            if (c->isExpanded())
+                ++numExpanded;
+        }
+
+        if (numExpanded == 0)
+            return -1;
+
+        const int fixedPart = total - numExpanded * m_trackHeight;
+        return (availableHeight - fixedPart) / numExpanded;
     }
 
     CollapsibleChannel* findByChanId(int globalChanId) const
@@ -564,6 +599,12 @@ public:
         int y = 0;
         for (auto& c : m_channels)
         {
+            if (!c->isVisible())
+            {
+                c->setBounds(0, y, w, 0);
+                continue;
+            }
+
             const int h = c->getPreferredHeight();
             c->setBounds(0, y, w, h);
             y += h;
@@ -1018,6 +1059,7 @@ void AudioDebuggerUI::resized()
         m_overlay->toFront(false);
     }
 
+    autoFitTrackHeight();
     syncVerticalScrollbar();
 }
 
@@ -1057,6 +1099,33 @@ void AudioDebuggerUI::syncVerticalScrollbar()
 
     scrollbar->setRangeLimits(0.0, contentHeight, juce::dontSendNotification);
     scrollbar->setCurrentRange((double)m_viewport->getViewPositionY(), visibleHeight, juce::dontSendNotification);
+}
+
+void AudioDebuggerUI::autoFitTrackHeight()
+{
+    if (!m_channelList || !m_viewport || m_parentComponent == nullptr)
+        return;
+
+    const int availableHeight = m_viewport->getHeight();
+    if (availableHeight <= 0)
+        return;
+
+    const int fitted = m_channelList->computeFittingTrackHeight(availableHeight);
+    if (fitted < 0)
+        return;
+
+    const int snapped = (fitted / TRACK_HEIGHT_STEP) * TRACK_HEIGHT_STEP;
+    setTrackHeight(snapped);
+    m_parentComponent->setTrackHeightSliderValue(m_trackHeight);
+}
+
+void AudioDebuggerUI::updateMidiTrackVisibility()
+{
+    if (m_channelList && m_midiTrack && m_midiChannel)
+    {
+        if (m_channelList->setTrackVisible(m_midiChannel, m_midiTrack->hasEvents()))
+            channelLayoutChanged();
+    }
 }
 
 void AudioDebuggerUI::autoConnectToLastFile()
@@ -1105,6 +1174,8 @@ void AudioDebuggerUI::timerCallback()
             if (!overviewLoading)
             {
                 setGenerationButtonsEnabled(true);
+                updateMidiTrackVisibility();
+                autoFitTrackHeight();
             }
 
             m_isLoading = overviewLoading;
@@ -1115,6 +1186,8 @@ void AudioDebuggerUI::timerCallback()
         {
             if (m_midiTrack)
                 m_midiTrack->invalidateCache();
+
+            updateMidiTrackVisibility();
 
             if (overview->isLiveMode())
             {
@@ -1476,6 +1549,7 @@ bool AudioDebuggerUI::loadAudioFile(const juce::File& file, bool liveMode)
     m_numOutputs = header.out_channels;
 
     m_channelList->clear();
+    m_midiChannel = nullptr;
     m_midiTrack.reset();
     m_diffTrack.reset();
 
@@ -1488,7 +1562,7 @@ bool AudioDebuggerUI::loadAudioFile(const juce::File& file, bool liveMode)
     }
 
     m_midiTrack = std::make_unique<MidiTrackComponent>(*this);
-    m_channelList->addTrack("MIDI", m_midiTrack.get(), juce::Colours::mediumpurple);
+    m_midiChannel = m_channelList->addTrack("MIDI", m_midiTrack.get(), juce::Colours::mediumpurple);
 
     for (int i = 0; i < m_numInputs; i++)
     {
@@ -1515,6 +1589,9 @@ bool AudioDebuggerUI::loadAudioFile(const juce::File& file, bool liveMode)
                                 m_channels[(size_t)chanId].get(),
                                 getWaveformColour((uint8_t)chanId));
     }
+
+    updateMidiTrackVisibility();
+    autoFitTrackHeight();
 
     m_parentComponent->updateSampleRateDisplay(header.sample_rate);
 

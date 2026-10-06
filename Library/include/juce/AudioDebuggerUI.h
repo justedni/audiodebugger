@@ -241,6 +241,7 @@ public:
     static constexpr int MIN_TRACK_HEIGHT = 40;
     static constexpr int MAX_TRACK_HEIGHT = 400;
     static constexpr int DEFAULT_TRACK_HEIGHT = 120;
+    static constexpr int TRACK_HEIGHT_STEP = 5;
 
     void channelLayoutChanged();
     void ensureSampleCache();
@@ -255,6 +256,9 @@ public:
     DiffDetector* getDiffDetector() const;
 protected:
     void setGenerationButtonsEnabled(bool bEnable);
+
+    void autoFitTrackHeight();
+    void updateMidiTrackVisibility();
 
     void updateVisibleRange();
 
@@ -288,6 +292,7 @@ protected:
 
     std::vector<std::unique_ptr<ChannelComponent>> m_channels;
     std::unique_ptr<MidiTrackComponent> m_midiTrack;
+    CollapsibleChannel* m_midiChannel = nullptr;
     std::unique_ptr<DiffTrackComponent> m_diffTrack;
 
     int m_trackHeight = DEFAULT_TRACK_HEIGHT;

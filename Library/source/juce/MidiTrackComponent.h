@@ -30,6 +30,8 @@ public:
 
     void invalidateCache() { m_cacheValid = false; }
 
+    bool hasEvents() const { return !m_notes.empty(); }
+
     static constexpr int MIN_HEIGHT = 40;
     static constexpr int MAX_HEIGHT = 120;
 
