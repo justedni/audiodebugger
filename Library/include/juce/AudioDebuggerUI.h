@@ -80,9 +80,16 @@ public:
     virtual void controlPanelResized(int x, int y, int width) {}
     virtual void setSliderFromDebugPanel(uint8_t id, float value) {}
     virtual void setButtonFromDebugPanel(uint8_t id, bool bEnabled) {}
+    virtual void setOptionFromDebugPanel(uint8_t id, bool bEnabled) {}
     virtual void invalidateCustomCache_() {}
     virtual juce::Colour getWaveformColour(uint8_t channelId) const;
+
     virtual juce::String getSampleValueString(float value, uint8_t bitDepth) const;
+    virtual int32_t getSampleValueForDiff(float value, uint8_t bitDepth) const;
+
+    virtual float getFloatParam(uint8_t id) const { return 0.0f; }
+    virtual bool getBoolParam(uint8_t id) const { return false; }
+    virtual bool getBoolOption(uint8_t id) const { return false; }
 
     void refreshChannelBounds();
 

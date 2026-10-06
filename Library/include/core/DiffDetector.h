@@ -5,6 +5,7 @@
 
 #include <vector>
 #include <mutex>
+#include <functional>
 
 namespace AudioDebug {
 
@@ -31,30 +32,16 @@ struct DifferenceRange
 class DiffDetector
 {
 public:
-    enum MaskPreset : uint8_t
-    {
-        Full,
-        Bits16,
-        Count
-    };
-
     const std::vector<DifferenceRange>& getAll() const { return m_differences; }
     std::vector<DifferenceRange> getInRange(int64_t startSample, int64_t endSample) const;
 
     void startDetection(int numChannels);
-    void detectDifferences(const std::vector<float>& leftSamples, const std::vector<float>& rightSamples, int ch, uint8_t bitDepth);
-
-    void setMaskPreset(MaskPreset preset);
-    MaskPreset getMaskPreset() const { return m_preset; }
+    void detectDifferences(const std::vector<float>& leftSamples, const std::vector<float>& rightSamples, int ch, uint8_t bitDepth, std::function<int32_t(float, uint8_t)> funcGetVal);
 
     void setThreshold(int threshold) { m_threshold = threshold; }
     int getThreshold() const { return m_threshold; }
 
 private:
-    int32_t diffValues(int32_t a, int32_t b) const;
-
-    uint32_t maskForPreset(MaskPreset preset);
-
     std::vector<DifferenceRange> m_differences;
     mutable std::mutex m_mutex;
 
@@ -69,9 +56,6 @@ private:
     std::vector<State> m_states;
 
     int m_threshold = 0;
-
-    uint32_t m_mask = 0xFFFFFFFFu;
-    MaskPreset m_preset = MaskPreset::Full;
 };
 
 } // namespace AudioDebug

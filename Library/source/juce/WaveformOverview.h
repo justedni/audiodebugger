@@ -22,6 +22,7 @@ struct MipmapLevel;
 enum MipmapChan : uint8_t;
 class ReportFile;
 
+class AudioDebuggerUI;
 class DebugProcessor;
 
 class DiffDetector;
@@ -32,7 +33,7 @@ class ChannelComponent;
 class WaveformOverview
 {
 public:
-    WaveformOverview(DebugProcessor* processor);
+    WaveformOverview(AudioDebuggerUI* parent, DebugProcessor* processor);
     ~WaveformOverview();
 
     void startLiveMonitoring();
@@ -86,6 +87,7 @@ protected:
     std::unique_ptr<ReportFile> m_genFile;
 
 private:
+    AudioDebuggerUI* m_parent = nullptr;
     DebugProcessor* m_processor = nullptr;
 
     bool disableRefBlocks = false;

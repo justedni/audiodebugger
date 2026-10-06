@@ -265,21 +265,6 @@ public:
         m_diffThresholdSlider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 50, 20);
         m_diffThresholdSlider.onValueChange = [this] { m_audioDebugger->differenceThresholdChanged(m_diffThresholdSlider.getValue()); };
 
-        m_diffMode.addItem("Full", DiffDetector::MaskPreset::Full + 1);
-        m_diffMode.addItem("16-bit", DiffDetector::MaskPreset::Bits16 + 1);
-        m_diffMode.onChange = [this]
-        {
-            if (auto* diffDetector = m_audioDebugger->getDiffDetector())
-            {
-                const int idx = m_diffMode.getSelectedId() - 1;
-                if (idx >= 0 && idx <= (uint8_t)DiffDetector::MaskPreset::Count)
-                {
-                    diffDetector->setMaskPreset((DiffDetector::MaskPreset)idx);
-                }
-            }
-        };
-        addAndMakeVisible(m_diffMode);
-
         m_buttonPreviousDiff.reset(new juce::TextButton("Previous"));
         addAndMakeVisible(m_buttonPreviousDiff.get());
         m_buttonPreviousDiff->onClick = [this] { m_audioDebugger->goToDiff(AudioDebuggerUI::EDiffToGo::Previous); };
@@ -335,7 +320,6 @@ public:
         bottomBarBounds.removeFromLeft(30);
         m_diffThresholdLabel.setBounds(bottomBarBounds.removeFromLeft(100));
         m_diffThresholdSlider.setBounds(bottomBarBounds.removeFromLeft(100));
-        m_diffMode.setBounds(bottomBarBounds.removeFromLeft(80));
         m_buttonPreviousDiff->setBounds(bottomBarBounds.removeFromLeft(50));
         m_buttonNextDiff->setBounds(bottomBarBounds.removeFromLeft(50));
         m_buttonDiffRefresh->setBounds(bottomBarBounds.removeFromLeft(70));
@@ -465,7 +449,6 @@ private:
 
     juce::Label m_diffThresholdLabel;
     juce::Slider m_diffThresholdSlider;
-    juce::ComboBox m_diffMode;
     std::unique_ptr<juce::TextButton> m_buttonPreviousDiff;
     std::unique_ptr<juce::TextButton> m_buttonNextDiff;
     std::unique_ptr<juce::TextButton> m_buttonDiffRefresh;
@@ -608,7 +591,7 @@ private:
 AudioDebuggerUI::AudioDebuggerUI(DebugProcessor* processor)
     : m_processor(processor)
 {
-    m_controlPanel.reset(new ControlPanel(this, processor ? processor->getParameterInterface() : nullptr));
+    m_controlPanel.reset(new ControlPanel(this));
 
     m_lookAndFeel.reset(new AudioDebuggerLookAndFeel());
     setLookAndFeel(m_lookAndFeel.get());
@@ -920,6 +903,11 @@ juce::Colour AudioDebuggerUI::getWaveformColour(uint8_t channelId) const
 juce::String AudioDebuggerUI::getSampleValueString(float value, uint8_t bitDepth) const
 {
     return juce::String(AudioDebugger::floatToInt(value, bitDepth));
+}
+
+int32_t AudioDebuggerUI::getSampleValueForDiff(float value, uint8_t bitDepth) const
+{
+    return AudioDebugger::floatToInt(value, bitDepth);
 }
 
 float AudioDebuggerUI::getFontSize(double pixelsPerSample) const
@@ -1424,13 +1412,7 @@ bool AudioDebuggerUI::loadAudioFile(const juce::File& file, bool liveMode)
         return false;
     }
 
-    DiffDetector::MaskPreset diffMaskPreset = DiffDetector::MaskPreset::Full;
-
-    if (auto* oldDiffDetector = getDiffDetector()) {
-        diffMaskPreset = oldDiffDetector->getMaskPreset();
-    }
-
-    overview.reset(new WaveformOverview(m_processor));
+    overview.reset(new WaveformOverview(this, m_processor));
 
     zoomLevel = 1.0;
 
@@ -1439,7 +1421,6 @@ bool AudioDebuggerUI::loadAudioFile(const juce::File& file, bool liveMode)
     viewportCenter = 0.5;
 
     auto* diffDetector = overview->getDiffDetector();
-    diffDetector->setMaskPreset(diffMaskPreset);
     diffDetector->setThreshold(m_parentComponent->getDiffThreshold());
 
     bool bRet = overview->openRptFile(file.getFullPathName(), zoomLevel, getWidth(), liveMode);

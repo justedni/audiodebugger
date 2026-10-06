@@ -453,7 +453,8 @@ void UnitTestProcessor::regenerateRpt(uint64_t totalDuration)
 			{
 				const auto& originalBuffer = refOutChannelsCache[chan]->readToTemp(numberOfSamplesPerBlock, -latencySamples);
 				const auto& generatedBuffer = genOutChannelsCache[chan]->readToTemp(numberOfSamplesPerBlock, 0);
-				m_diffDetector->detectDifferences(originalBuffer, generatedBuffer, chan, header.bit_depth);
+				m_diffDetector->detectDifferences(originalBuffer, generatedBuffer, chan, header.bit_depth,
+					[this](auto val, auto bitDepth) { return AudioDebugger::floatToInt(val, bitDepth); });
 			}
 		}
 	});

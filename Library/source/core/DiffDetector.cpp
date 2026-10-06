@@ -18,7 +18,7 @@ void DiffDetector::startDetection(int numChannels)
     m_states.resize(numChannels);
 }
 
-void DiffDetector::detectDifferences(const std::vector<float>& leftSamples, const std::vector<float>& rightSamples, int ch, uint8_t bitDepth)
+void DiffDetector::detectDifferences(const std::vector<float>& leftSamples, const std::vector<float>& rightSamples, int ch, uint8_t bitDepth, std::function<int32_t(float, uint8_t)> funcGetVal)
 {
     assert(leftSamples.size() == rightSamples.size());
 
@@ -31,9 +31,9 @@ void DiffDetector::detectDifferences(const std::vector<float>& leftSamples, cons
         bool hasDifference = false;
         int32_t maxDiffAtSample = 0;
 
-        const int32_t leftSample = AudioDebugger::floatToInt(leftSamples[i], bitDepth);
-        const int32_t rightSample = AudioDebugger::floatToInt(rightSamples[i], bitDepth);
-        const int32_t diff = diffValues(leftSample, rightSample);
+        const int32_t leftSample = funcGetVal(leftSamples[i], bitDepth);
+        const int32_t rightSample = funcGetVal(rightSamples[i], bitDepth);
+        const int32_t diff = std::abs(leftSample - rightSample);
 
         if (diff > m_threshold) {
             hasDifference = true;
@@ -68,29 +68,6 @@ void DiffDetector::detectDifferences(const std::vector<float>& leftSamples, cons
         m_differences.emplace_back(ch, state.rangeStart, lastSample, state.rangeMaxDiff);
         state.inRange = false;
     }
-}
-
-int32_t DiffDetector::diffValues(int32_t a, int32_t b) const
-{
-    const int32_t maskedA = static_cast<int32_t>(static_cast<uint32_t>(a) & m_mask);
-    const int32_t maskedB = static_cast<int32_t>(static_cast<uint32_t>(b) & m_mask);
-    return std::abs(maskedA - maskedB);
-}
-
-void DiffDetector::setMaskPreset(MaskPreset preset)
-{
-    m_preset = preset;
-    m_mask = maskForPreset(preset);
-}
-
-uint32_t DiffDetector::maskForPreset(MaskPreset preset)
-{
-    switch (preset)
-    {
-    case MaskPreset::Full:      return 0xFFFFFFFFu;
-    case MaskPreset::Bits16:    return 0xFFFFFF00u;
-    }
-    return 0xFFFFFFFFu;
 }
 
 std::vector<DifferenceRange> DiffDetector::getInRange(int64_t startSample, int64_t endSample) const

@@ -12,9 +12,8 @@
 
 namespace AudioDebug {
 
-ControlPanel::ControlPanel(AudioDebuggerUI* parent, DebugParamInterface* paramInterface)
+ControlPanel::ControlPanel(AudioDebuggerUI* parent)
     : m_parent(parent)
-    , m_paramInterface(paramInterface)
 {
     m_optionPanel.reset(new OptionPanel("Options"));
     addAndMakeVisible(m_optionPanel.get());
@@ -170,7 +169,6 @@ void ControlPanel::sliderValueChanged(juce::Slider* slider)
     {
         if (&s->getSlider() == slider)
         {
-            m_paramInterface->setFloatParam(s->getId(), val);
             m_parent->setSliderFromDebugPanel(s->getId(), val);
 
             break;
@@ -182,12 +180,15 @@ void ControlPanel::sliderValueChanged(juce::Slider* slider)
 
 void ControlPanel::buttonClicked(juce::Button* button)
 {
+    auto state = button->getToggleState();
+
     bool bHandled = false;
     int id = 0;
     for (auto& toggle : m_toggleOptions)
     {
         if (button == toggle.second.button.get())
         {
+            m_parent->setOptionFromDebugPanel(toggle.first, state);
             bHandled = true;
             break;
         }
@@ -201,8 +202,6 @@ void ControlPanel::buttonClicked(juce::Button* button)
         {
             if (button == btn.get())
             {
-                auto state = button->getToggleState();
-                m_paramInterface->setBoolParam(i, state);
                 m_parent->setButtonFromDebugPanel(i, state);
                 bHandled = true;
                 break;
@@ -218,14 +217,14 @@ void ControlPanel::updateControls()
 {
     for (auto* slider : m_sliders)
     {
-        int val = m_paramInterface->getFloatParam(slider->getId());
+        int val = m_parent->getFloatParam(slider->getId());
         slider->updateValue(val);
     }
 
     uint8_t i = 0;
     for (auto& btn : m_buttons)
     {
-        bool bIsEnabled = m_paramInterface->getBoolParam(i);
+        bool bIsEnabled = m_parent->getBoolParam(i);
         m_buttons[i]->setToggleState(bIsEnabled, juce::NotificationType::dontSendNotification);
         i++;
     }

@@ -15,7 +15,10 @@ CustomSlider::CustomSlider(uint8_t in_id, uint8_t in_pos, juce::Component* edito
     slider.setRange(min, max, step);
     slider.setNumDecimalPlacesToDisplay(0);
     slider.setTextBoxStyle(juce::Slider::TextBoxRight, false, width, 20);
-    slider.addListener(listener);
+
+    if (listener)
+        slider.addListener(listener);
+
     editor->addAndMakeVisible(slider);
 }
 

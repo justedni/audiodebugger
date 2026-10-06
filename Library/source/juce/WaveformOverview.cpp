@@ -6,6 +6,7 @@
 #include "core/DebuggerAccess.h"
 #include "core/AudioDebugInterface.h"
 #include "core/FileWriter.h"
+#include "juce/AudioDebuggerUI.h"
 #include "juce/Mipmaps.h"
 #include "core/RingBuffer.h"
 
@@ -16,8 +17,9 @@
 
 namespace AudioDebug {
 
-WaveformOverview::WaveformOverview(DebugProcessor* processor)
-    : m_processor(processor)
+WaveformOverview::WaveformOverview(AudioDebuggerUI* parent, DebugProcessor* processor)
+    : m_parent(parent)
+    , m_processor(processor)
     , totalSamples(0)
     , sampleRate(0)
     , bitsPerSample(0)
@@ -316,7 +318,8 @@ void WaveformOverview::openGenFile(const juce::String& filePath)
         const auto& leftBuffer = m_rptFile->getOutTempBuffer();
         const auto& rightBuffer = m_genFile->getOutTempBuffer();
         for (int ch = 0; ch < header.out_channels; ch++)
-            m_diffDetector->detectDifferences(leftBuffer[ch], rightBuffer[ch], ch, header.bit_depth);
+            m_diffDetector->detectDifferences(leftBuffer[ch], rightBuffer[ch], ch, header.bit_depth,
+                [this](auto val, auto bitDepth) { return m_parent->getSampleValueForDiff(val, bitDepth); });
 
         samplesProcessed += header.block_size;
 
@@ -453,7 +456,8 @@ void WaveformOverview::updateRegenerateThread()
             {
                 const auto& originalBuffer = refOutChannelsCache[chan]->readToTemp(numberOfSamplesPerBlock, -latencySamples);
                 const auto& generatedBuffer = genOutChannelsCache[chan]->readToTemp(numberOfSamplesPerBlock, 0);
-                m_diffDetector->detectDifferences(originalBuffer, generatedBuffer, chan, header.bit_depth);
+                m_diffDetector->detectDifferences(originalBuffer, generatedBuffer, chan, header.bit_depth,
+                    [this](auto val, auto bitDepth) { return m_parent->getSampleValueForDiff(val, bitDepth); });
             }
 
             m_regenSamplesProcessed += numberOfSamplesPerBlock;
