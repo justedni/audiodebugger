@@ -259,6 +259,7 @@ public:
     DiffDetector* getDiffDetector() const;
 protected:
     void setGenerationButtonsEnabled(bool bEnable);
+    void onBackgroundLoadStarted();
 
     void autoFitTrackHeight();
     void updateMidiTrackVisibility();

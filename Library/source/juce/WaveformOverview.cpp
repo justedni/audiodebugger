@@ -209,8 +209,21 @@ void WaveformOverview::startMipmapBackgroundGeneration()
     m_backgroundThread->startThread();
 }
 
+void WaveformOverview::beginGenFileLoad()
+{
+    m_backgroundThread.reset();
+
+    disableRefBlocks = true;
+    m_liveModeBeforeRegen = m_liveMode;
+    m_liveMode = false;
+    m_loadingProgress = 0;
+    m_bIsLoading = true;
+}
+
 void WaveformOverview::startOpenGenFile(const juce::String& genFilePath)
 {
+    beginGenFileLoad();
+
     class GenFileThread : public juce::Thread {
     public:
         GenFileThread(WaveformOverview* owner, const juce::String& filePath)
@@ -235,6 +248,8 @@ void WaveformOverview::startOpenGenFile(const juce::String& genFilePath)
 
 void WaveformOverview::startOutputRegeneration()
 {
+    beginGenFileLoad();
+
     class RegenerationThread : public juce::Thread {
     public:
         RegenerationThread(WaveformOverview* owner)
@@ -257,6 +272,9 @@ void WaveformOverview::startOutputRegeneration()
 
 void WaveformOverview::reopenSameGenFile()
 {
+    if (!m_genFile)
+        return;
+
     auto& currFilePath = m_genFile->getFilePath();
     if (!currFilePath.empty())
         startOpenGenFile(currFilePath);
@@ -269,12 +287,6 @@ void WaveformOverview::openGenFile(const juce::String& filePath)
     jassert(bOpened);
 
     setGenCallbacks();
-
-    disableRefBlocks = true;
-    m_bIsLoading = true;
-    m_loadingProgress = 0;
-
-    m_liveMode = false;
 
     m_rptFile->seekToDataStart();
 
@@ -340,9 +352,6 @@ void WaveformOverview::openGenFile(const juce::String& filePath)
 
 void WaveformOverview::updateRegenerateThread()
 {
-    disableRefBlocks = true;
-    m_bIsLoading = true;
-    m_loadingProgress = 0;
     m_regenSamplesProcessed = 0;
 
     auto& pDebugger = DebugProcessor::DebuggerAccess::get(*m_processor);
@@ -384,6 +393,18 @@ void WaveformOverview::updateRegenerateThread()
             genFile = new ReportFile(ReportFile::EFileSlot::Gen, file.getFullPathName().toStdString());
     }
 
+    m_genFile.reset(genFile);
+    bool bOpened = genFile ? m_genFile->openFile(true) : false;
+    if (!bOpened)
+    {
+        pDebugger.endRegenerate();
+
+        m_liveMode = m_liveModeBeforeRegen;
+        m_loadingProgress = 100;
+        m_bIsLoading = false;
+        return;
+    }
+
     const int latencySamples = m_processor->getLatencySamples(header.block_size);
 
     AudioRingBuffer** refOutChannelsCache = new AudioRingBuffer * [numOutChannels];
@@ -394,15 +415,7 @@ void WaveformOverview::updateRegenerateThread()
         genOutChannelsCache[i] = new AudioRingBuffer(header.block_size, header.block_size + latencySamples);
     }
 
-    m_genFile.reset(genFile);
-    bool bOpened = genFile ? m_genFile->openFile(true) : false;
-    if (!bOpened)
-        return;
-
     setGenCallbacks();
-
-    bool previousLiveMode = m_liveMode;
-    m_liveMode = false;
 
     bool rptFileEnded = false;
 
@@ -523,11 +536,6 @@ void WaveformOverview::updateRegenerateThread()
 
     m_mipmaps->finaliseRef();
 
-    m_bIsLoading = false;
-    m_loadingProgress = 100;
-
-    m_liveMode = previousLiveMode;
-
     pDebugger.endRegenerate();
 
     for (int i = 0; i < numOutChannels; i++)
@@ -537,6 +545,10 @@ void WaveformOverview::updateRegenerateThread()
     }
     delete[] refOutChannelsCache;
     delete[] genOutChannelsCache;
+
+    m_liveMode = m_liveModeBeforeRegen;
+    m_loadingProgress = 100;
+    m_bIsLoading = false;
 }
 
 void WaveformOverview::generateMipmapLevelsInBackground()

@@ -1204,6 +1204,11 @@ void AudioDebuggerUI::timerCallback()
 
             if (!overviewLoading)
             {
+                for (auto& channel : m_channels)
+                    channel->clearCache();
+
+                invalidateCustomCache_();
+
                 setGenerationButtonsEnabled(true);
                 updateMidiTrackVisibility();
                 autoFitTrackHeight();
@@ -1552,6 +1557,14 @@ void AudioDebuggerUI::regenerateOutput(int32_t sampleItToDebug)
 
     setGenerationButtonsEnabled(false);
     overview->startOutputRegeneration();
+    onBackgroundLoadStarted();
+}
+
+void AudioDebuggerUI::onBackgroundLoadStarted()
+{
+    m_isLoading = true;
+    m_repaintedRegenSamples = 0;
+    repaint();
 }
 
 void AudioDebuggerUI::clearScreen()
@@ -1786,6 +1799,7 @@ void AudioDebuggerUI::importgenFile()
         if (selected.existsAsFile())
         {
             overview->startOpenGenFile(selected.getFullPathName());
+            onBackgroundLoadStarted();
         }
     });
 }
@@ -1793,6 +1807,7 @@ void AudioDebuggerUI::importgenFile()
 void AudioDebuggerUI::refreshGenFile()
 {
     overview->reopenSameGenFile();
+    onBackgroundLoadStarted();
 }
 
 void AudioDebuggerUI::exportbinReport()

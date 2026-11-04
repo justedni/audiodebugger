@@ -73,8 +73,10 @@ private:
 
     void startMipmapBackgroundGeneration();
     void generateMipmapLevelsInBackground();
+    void beginGenFileLoad();
 
-    bool m_liveMode = false;
+    std::atomic<bool> m_liveMode{ false };
+    bool m_liveModeBeforeRegen = false;
     std::atomic<bool> shouldStopLiveMonitoring{ true };
     std::unique_ptr<juce::Thread> liveMonitorThread;
 
