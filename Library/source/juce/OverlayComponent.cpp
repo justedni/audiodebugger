@@ -100,8 +100,6 @@ void OverlayComponent::paintMarkers(juce::Graphics& g)
     std::vector<MarkerPair> regularMarkers;
     std::vector<MarkerPair> customMarkers;
 
-    int64_t lastBufferSample = -minSampleSpacing * 2;
-
     for (const auto& m : markers)
     {
         auto& marker = m.main;
@@ -109,11 +107,7 @@ void OverlayComponent::paintMarkers(juce::Graphics& g)
         {
         case Metadata::MARKER_BUFFER_START:
         {
-            if (marker.samplePosition - lastBufferSample >= minSampleSpacing) {
-                startMarkers.push_back(m);
-            }
-
-            lastBufferSample = marker.samplePosition;
+            startMarkers.push_back(m);
             break;
         }
         case Metadata::MARKER_TEXT:
