@@ -86,6 +86,8 @@ public:
 	virtual void releaseResourcesImpl() {}
 	virtual void processBlockImpl(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages, ScopedJuceDebugBlock* scope) = 0;
 
+	virtual void onCaptureStarted(juce::AudioBuffer<float>& buffer) {}
+
 	// juce::AudioProcessor
 	void prepareToPlay(double sampleRate, int samplesPerBlock) final;
 	void releaseResources() final;

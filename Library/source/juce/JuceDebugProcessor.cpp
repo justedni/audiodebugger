@@ -112,6 +112,8 @@ void JuceDebugProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
                         getTotalNumInputChannels(),
                         getTotalNumOutputChannels(),
                         AudioDebug::EBitDepth::Int32);
+
+                    onCaptureStarted(buffer);
                 }
 
                 m_isPlaying = isPlaying;
