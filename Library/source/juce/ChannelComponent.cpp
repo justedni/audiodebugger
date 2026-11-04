@@ -441,10 +441,16 @@ void CollapsibleChannel::setTrackHeight(int h)
 
 int CollapsibleChannel::getPreferredHeight() const
 {
+    return getPreferredHeightFor(trackHeight);
+}
+
+int CollapsibleChannel::getPreferredHeightFor(int globalTrackHeight) const
+{
     if (!expanded)
         return headerHeight;
 
-    const int h = (track != nullptr) ? track->computeTrackHeight(trackHeight) : trackHeight;
+    globalTrackHeight = std::max(minTrackHeight, globalTrackHeight);
+    const int h = (track != nullptr) ? track->computeTrackHeight(globalTrackHeight) : globalTrackHeight;
     return headerHeight + std::max(minTrackHeight, h);
 }
 

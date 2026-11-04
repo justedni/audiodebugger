@@ -90,6 +90,7 @@ public:
     int getTrackHeight() const { return trackHeight; }
 
     int getPreferredHeight() const;
+    int getPreferredHeightFor(int globalTrackHeight) const;
 
     static constexpr int getHeaderHeight()   { return headerHeight; }
     static constexpr int getMinTrackHeight() { return minTrackHeight; }

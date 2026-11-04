@@ -23,7 +23,7 @@ public:
     bool isOptionEnabled(uint8_t id) const;
 
     void addSlider(int id, const CustomSlider& srcSlider, juce::LookAndFeel* lookAndFeel);
-    void addButton(const juce::String& name);
+    void addButton(const juce::String& name, bool defaultVisible);
     void setPanelLookAndFeel(juce::LookAndFeel* lookAndFeel);
 
     void updateControls();

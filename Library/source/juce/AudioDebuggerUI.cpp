@@ -88,6 +88,13 @@ public:
         repaint();
     }
 
+    void setArmed()
+    {
+        m_state = State::Armed;
+        updateButtonText();
+        repaint();
+    }
+
     void updateButtonText()
     {
         juce::String text;
@@ -142,10 +149,12 @@ public:
     void menuItemSelected(int menuItemID, int menuIndex) override;
 
     bool getDarkModeEnabled() const { return m_optionDarkMode; }
+    bool getShowRegenerateTracks() const { return m_optionShowRegenerateTracks; }
 private:
     AudioDebuggerUI* m_parent = nullptr;
     bool m_optionDarkMode = false;
     bool m_optionAlwaysOnTop = false;
+    bool m_optionShowRegenerateTracks = false;
 };
 
 juce::Colour AudioDebuggerUI::colorIdToJuceColour(uint32_t id) const
@@ -295,6 +304,7 @@ public:
 
     ~MainComponent()
     {
+        m_audioDebugger->setParentComponentPtr(nullptr);
         m_menuBar->setModel(nullptr);
     }
 
@@ -545,26 +555,42 @@ public:
         return false;
     }
 
-    int computeFittingTrackHeight(int availableHeight)
+    int computeTotalHeightFor(int globalTrackHeight) const
     {
         int total = 0;
-        int numExpanded = 0;
-
         for (auto& c : m_channels)
         {
-            if (!c->isVisible())
-                continue;
-
-            total += c->getPreferredHeight();
-            if (c->isExpanded())
-                ++numExpanded;
+            if (c->isVisible())
+                total += c->getPreferredHeightFor(globalTrackHeight);
         }
 
-        if (numExpanded == 0)
+        return total;
+    }
+
+    int computeFittingTrackHeight(int availableHeight)
+    {
+        bool bAnyExpanded = false;
+        for (auto& c : m_channels)
+        {
+            if (c->isVisible() && c->isExpanded())
+                bAnyExpanded = true;
+        }
+
+        if (!bAnyExpanded)
             return -1;
 
-        const int fixedPart = total - numExpanded * m_trackHeight;
-        return (availableHeight - fixedPart) / numExpanded;
+        int lo = 0;
+        int hi = availableHeight;
+        while (lo < hi)
+        {
+            const int mid = lo + (hi - lo + 1) / 2;
+            if (computeTotalHeightFor(mid) <= availableHeight)
+                lo = mid;
+            else
+                hi = mid - 1;
+        }
+
+        return lo;
     }
 
     CollapsibleChannel* findByChanId(int globalChanId) const
@@ -777,9 +803,9 @@ void AudioDebuggerUI::addControlPanelOption(uint8_t id, const std::string& displ
     getControlPanel()->addOption(id, displayName, defaultEnabled, defaultVisible);
 }
 
-void AudioDebuggerUI::addControlPanelButton(const juce::String& name)
+void AudioDebuggerUI::addControlPanelButton(const juce::String& name, bool defaultVisible)
 {
-    getControlPanel()->addButton(name);
+    getControlPanel()->addButton(name, defaultVisible);
 }
 
 void AudioDebuggerUI::addControlPanelSlider(int id, const CustomSlider& srcSlider, juce::LookAndFeel* lookAndFeel)
@@ -1040,6 +1066,8 @@ bool AudioDebuggerUI::shouldPaintExtraDetailedUI() const
 
 void AudioDebuggerUI::resized()
 {
+    refreshChannelBounds();
+
     auto bounds = getLocalBounds();
 
     if (m_viewport)
@@ -1124,7 +1152,10 @@ void AudioDebuggerUI::updateMidiTrackVisibility()
     if (m_channelList && m_midiTrack && m_midiChannel)
     {
         if (m_channelList->setTrackVisible(m_midiChannel, m_midiTrack->hasEvents()))
+        {
             channelLayoutChanged();
+            autoFitTrackHeight();
+        }
     }
 }
 
@@ -1486,6 +1517,14 @@ void AudioDebuggerUI::setGenerationButtonsEnabled(bool bEnable)
 
 void AudioDebuggerUI::regenerateOutput(int32_t sampleItToDebug)
 {
+    auto* menuBarModel = m_parentComponent->getMenuBarModel();
+    if (!menuBarModel->getShowRegenerateTracks())
+    {
+        setShowRegenerateTracks(true);
+        autoFitTrackHeight();
+    }
+
+
     auto* autoConnectButton = m_parentComponent->getAutoConnectButton();
     if (autoConnectButton->isConnected())
     {
@@ -1515,12 +1554,34 @@ void AudioDebuggerUI::regenerateOutput(int32_t sampleItToDebug)
     overview->startOutputRegeneration();
 }
 
+void AudioDebuggerUI::clearScreen()
+{
+    overview.reset();
+    setGenerationButtonsEnabled(false);
+
+    m_numInputs = 0;
+    m_numOutputs = 0;
+
+    m_channelList->clear();
+    m_midiChannel = nullptr;
+    m_diffChannel = nullptr;
+    m_regenChannels.clear();
+    m_midiTrack.reset();
+    m_diffTrack.reset();
+
+    m_channels.clear();
+
+    resized();
+
+    updateVisibleRange();
+    repaint();
+}
+
 bool AudioDebuggerUI::loadAudioFile(const juce::File& file, bool liveMode)
 {
     if (!file.existsAsFile())
     {
-        overview.reset();
-        setGenerationButtonsEnabled(false);
+        clearScreen();
         return false;
     }
 
@@ -1550,6 +1611,8 @@ bool AudioDebuggerUI::loadAudioFile(const juce::File& file, bool liveMode)
 
     m_channelList->clear();
     m_midiChannel = nullptr;
+    m_diffChannel = nullptr;
+    m_regenChannels.clear();
     m_midiTrack.reset();
     m_diffTrack.reset();
 
@@ -1580,17 +1643,21 @@ bool AudioDebuggerUI::loadAudioFile(const juce::File& file, bool liveMode)
     }
 
     m_diffTrack = std::make_unique<DiffTrackComponent>(*this);
-    m_channelList->addTrack("Differences", m_diffTrack.get(), juce::Colours::orange);
+    m_diffChannel = m_channelList->addTrack("Differences", m_diffTrack.get(), juce::Colours::orange);
 
     for (int i = 0; i < m_numOutputs; i++)
     {
         const int chanId = getRegenChanId(i);
-        m_channelList->addTrack(juce::String::formatted("Regen Out %d", i + 1),
+        auto* newChannel = m_channelList->addTrack(juce::String::formatted("Regen Out %d", i + 1),
                                 m_channels[(size_t)chanId].get(),
                                 getWaveformColour((uint8_t)chanId));
+
+        m_regenChannels.push_back(newChannel);
     }
 
     updateMidiTrackVisibility();
+    auto* menuBarModel = m_parentComponent->getMenuBarModel();
+    setShowRegenerateTracks(menuBarModel->getShowRegenerateTracks());
     autoFitTrackHeight();
 
     m_parentComponent->updateSampleRateDisplay(header.sample_rate);
@@ -1601,7 +1668,6 @@ bool AudioDebuggerUI::loadAudioFile(const juce::File& file, bool liveMode)
     }
 
     resized();
-    refreshChannelBounds();
 
     updateVisibleRange();
     repaint();
@@ -1777,6 +1843,26 @@ void AudioDebuggerUI::exportbinReport()
     });
 }
 
+void AudioDebuggerUI::clearCurrentSession()
+{
+    auto options = juce::MessageBoxOptions::makeOptionsYesNo(
+        juce::MessageBoxIconType::QuestionIcon,
+        "Confirm",
+        "Do you want to clear the current recorded session?",
+        "Ok", "Cancel",
+        this);
+
+    juce::NativeMessageBox::showAsync(options, [this](int result)
+    {
+        if (result == 0)
+        {
+            clearScreen();
+            setAutoWriteRptFile(true);
+            m_parentComponent->getAutoConnectButton()->setArmed();
+        }
+    });
+}
+
 void AudioDebuggerUI::restoreFileState(bool bIsGen)
 {
     auto* file = bIsGen ? overview->getGenFile() : overview->getRptFile();
@@ -1816,6 +1902,27 @@ void AudioDebuggerUI::setUIDarkMode(bool bEnable)
     repaint();
 }
 
+void AudioDebuggerUI::setShowRegenerateTracks(bool bShow)
+{
+    bool bUpdate = false;
+
+    if (m_channelList)
+    {
+        if (m_diffTrack && m_diffChannel)
+            bUpdate |= m_channelList->setTrackVisible(m_diffChannel, bShow);
+
+        for (auto* regenChannel : m_regenChannels)
+        {
+            bUpdate |= m_channelList->setTrackVisible(regenChannel, bShow);
+        }
+    }
+
+    if (bUpdate)
+        channelLayoutChanged();
+
+    repaint();
+}
+
 void AudioDebuggerUI::setSliderValue(uint8_t id, float value)
 {
     getControlPanel()->setSliderValue(id, value);
@@ -1834,7 +1941,7 @@ MainMenuModel::MainMenuModel(AudioDebuggerUI* parent)
 
 juce::StringArray MainMenuModel::getMenuBarNames()
 {
-    return { "File", "Options", "Plugin"};
+    return { "File", "UI", "Plugin"};
 }
 
 juce::PopupMenu MainMenuModel::getMenuForIndex(int menuIndex, const juce::String& menuName)
@@ -1847,16 +1954,19 @@ juce::PopupMenu MainMenuModel::getMenuForIndex(int menuIndex, const juce::String
         menu.addItem(IMPORT_GEN, "Import Unit Test .gen report");
         menu.addItem(EXPORT, "Export .rpt");
         menu.addSeparator();
+        menu.addItem(CLEAR_SESSION, "Clear current session");
     }
     else if (menuIndex == 1)
     {
         menu.addItem(DARKMODE, "Dark mode", true, m_optionDarkMode);
-        menu.addItem(ALWAYSONTOP, "Always on top", true, m_optionAlwaysOnTop);
+        menu.addItem(ALWAYSONTOP, "Always on top", false, m_optionAlwaysOnTop);
+        menu.addSeparator();
+        menu.addItem(SHOWREGENERATE, "Show Regenerate tracks", true, m_optionShowRegenerateTracks);
     }
     else if (menuIndex == 2)
     {
-        menu.addItem(SET_RPT_STATE, "Restore state from .rpt file");
-        menu.addItem(SET_GEN_STATE, "Restore state from .gen file");
+        menu.addItem(SET_RPT_STATE, "Restore state from current .rpt");
+        menu.addItem(SET_GEN_STATE, "Restore state from current .gen");
     }
 
     return menu;
@@ -1881,6 +1991,11 @@ void MainMenuModel::menuItemSelected(int menuItemID, int menuIndex)
         m_parent->exportbinReport();
         break;
     }
+    case CLEAR_SESSION:
+    {
+        m_parent->clearCurrentSession();
+        break;
+    }
     case DARKMODE:
     {
         m_optionDarkMode = !m_optionDarkMode;
@@ -1893,6 +2008,12 @@ void MainMenuModel::menuItemSelected(int menuItemID, int menuIndex)
         m_optionAlwaysOnTop = !m_optionAlwaysOnTop;
         if (auto* top = m_parent->getTopLevelComponent())
             top->setAlwaysOnTop(m_optionAlwaysOnTop);
+        break;
+    }
+    case SHOWREGENERATE:
+    {
+        m_optionShowRegenerateTracks = !m_optionShowRegenerateTracks;
+        m_parent->setShowRegenerateTracks(m_optionShowRegenerateTracks);
         break;
     }
     case SET_RPT_STATE:

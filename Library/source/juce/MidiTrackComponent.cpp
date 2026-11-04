@@ -128,6 +128,15 @@ float MidiTrackComponent::noteToY(int noteNumber) const
     return usable - (ratio * usable);
 }
 
+bool MidiTrackComponent::hasEvents() const
+{
+    auto* overview = m_debugger.getOverview();
+    if (overview && overview->getMarkers())
+        return !overview->getMarkers()->getAllMidi().empty();
+
+    return false;
+}
+
 void MidiTrackComponent::paint(juce::Graphics& g)
 {
     if (!m_debugger.getOverview() || m_debugger.getViewportLengthSamples() <= 0)

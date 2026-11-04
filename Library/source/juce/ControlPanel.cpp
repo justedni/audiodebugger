@@ -91,7 +91,7 @@ void ControlPanel::addSlider(int id, const CustomSlider& srcSlider, juce::LookAn
     m_paramsPanel->addElement(&s, true);
 }
 
-void ControlPanel::addButton(const juce::String& name)
+void ControlPanel::addButton(const juce::String& name, bool defaultVisible)
 {
     std::unique_ptr<juce::ToggleButton> button(new juce::ToggleButton());
     button->setButtonText(name);

@@ -98,7 +98,7 @@ public:
 
     // ------------------------
     void addControlPanelOption(uint8_t id, const std::string& displayName, bool defaultEnabled, bool defaultVisible = true);
-    void addControlPanelButton(const juce::String& name);
+    void addControlPanelButton(const juce::String& name, bool defaultVisible);
     void addControlPanelSlider(int id, const CustomSlider& srcSlider, juce::LookAndFeel* lookAndFeel);
     void addComponentToControlPanel(juce::Component* component);
 
@@ -134,10 +134,12 @@ public:
     void importgenFile();
     void refreshGenFile();
     void exportbinReport();
+    void clearCurrentSession();
     void restoreFileState(bool bIsGen);
     void setAutoWriteRptFile(bool bEnable);
     void setRptFileMaxLength(int numSeconds);
     void setUIDarkMode(bool bEnable);
+    void setShowRegenerateTracks(bool bShow);
 
     enum EDiffToGo : uint8_t { Previous, Next };
     void goToDiff(EDiffToGo type);
@@ -172,6 +174,7 @@ public:
 
 protected:
     bool loadAudioFile(const juce::File& file, bool liveMode);
+    void clearScreen();
     bool shouldPaintDetailedUI() const;
     bool shouldPaintExtraDetailedUI() const;
 
@@ -294,6 +297,8 @@ protected:
     std::unique_ptr<MidiTrackComponent> m_midiTrack;
     CollapsibleChannel* m_midiChannel = nullptr;
     std::unique_ptr<DiffTrackComponent> m_diffTrack;
+    CollapsibleChannel* m_diffChannel = nullptr;
+    std::vector<CollapsibleChannel*> m_regenChannels;
 
     int m_trackHeight = DEFAULT_TRACK_HEIGHT;
 
@@ -318,8 +323,10 @@ enum EMenuItemID : uint8_t
     IMPORT_RPT,
     IMPORT_GEN,
     EXPORT,
+    CLEAR_SESSION,
     DARKMODE,
     ALWAYSONTOP,
+    SHOWREGENERATE,
     SET_RPT_STATE,
     SET_GEN_STATE,
 };
