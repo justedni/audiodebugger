@@ -56,7 +56,7 @@ void DebuggerSpawner::openReport()
         };
 
         m_reportWindow = new AudioDebug::WaveformPopup(
-            "Report Viewer",
+            "Audio Debugger",
             m_reportViewer.get(),
             std::move(onClose)
         );
