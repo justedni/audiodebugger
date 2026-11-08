@@ -93,7 +93,8 @@ void JuceDebugProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
 
     float* const* data = buffer.getArrayOfWritePointers();
 
-    buffer.clear();
+    for (int ch = getTotalNumInputChannels(); ch < getTotalNumOutputChannels(); ++ch)
+        buffer.clear(ch, 0, buffer.getNumSamples());
 
     if (auto* procPlayHead = getPlayHead())
     {

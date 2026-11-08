@@ -64,6 +64,7 @@ void SamplePluginProcessor::prepareToPlayImpl(double sampleRate, int samplesPerB
 
 void SamplePluginProcessor::processBlockImpl(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages, AudioDebug::ScopedJuceDebugBlock* scope)
 {
+    buffer.clear();
     m_synth.renderNextBlock(buffer, midiMessages, 0, buffer.getNumSamples());
 
     if (scope && scope->isActive())
