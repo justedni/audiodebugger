@@ -4,7 +4,7 @@
 
 **One log line per sample: a visual debugger for bit-perfect audio.**
 
-![Audio Debugger: zoomed-in waveform with per-sample metadata|497](Screenshots/01.png)
+![Audio Debugger: zoomed-in waveform with per-sample metadata|514](Screenshots/02.png)
 
 Audio Debugger records everything that goes in and out of your audio processor (samples, MIDI, markers and custom data) into a binary trace from the audio thread. You can then inspect the trace sample by sample, re-run your processor on the recorded input (*regenerate*), and see exactly where the new output differs from the original.
 
